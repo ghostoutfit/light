@@ -3,16 +3,32 @@ import { useState, useRef } from 'react';
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // ── Spectral emission model ───────────────────────────────────
-// Skewed Gaussian evaluated at a band's centre frequency.
-// peak  [0-1]: emission peak position (0=IR, 1=X-Ray)
-// width [0-1]: spread (0=narrow spike σ≈0.03, 1=very broad σ≈0.50)
-// skew  [0-1]: widens the low-freq tail (blackbody-like IR rolloff)
+// Log-normal distribution. bandFreq and peak share the same Hz-like
+// scale (bands at 200/800/3200/12000; peak slider 20–20000).
+// width [0.01–1.0]: log-space sigma multiplier — tight spike vs broad
+// skew  [0.1–5.0]:  sigma = width × skew; higher = wider, longer tail
+// Normalised as a proper log-normal PDF so narrow peaks stay bright and
+// broad curves spread energy across bands without total-energy inflation.
 function spectralEmission(bandFreq, peak, width, skew) {
-  const sigma = 0.03 + width * 0.47;
-  const d = bandFreq - peak;
-  const s = d < 0 ? sigma * (1 + skew * 3) : sigma;
-  return Math.exp(-0.5 * (d / s) ** 2);
+  const s = Math.max(width, 0.001);
+  const x = bandFreq / peak;
+
+  // Skew ≈ 0: fall back to a plain Gaussian in linear space
+  if (Math.abs(skew) < 0.001) {
+    return Math.exp(-0.5 * ((bandFreq - peak) / (s * peak)) ** 2);
+  }
+
+  // Log-normal: sharp rise, long right tail — approximates Planck curve
+  const sigma = s * Math.abs(skew);
+  const lnX   = Math.log(x) / sigma;
+  return Math.exp(-0.5 * lnX * lnX) / (x * sigma);
 }
+
+// Log-scale helpers for peak slider (20 – 20 000 Hz)
+const PEAK_MIN = 20, PEAK_MAX = 20000;
+const peakToSlider = p => Math.round(Math.log(p / PEAK_MIN) / Math.log(PEAK_MAX / PEAK_MIN) * 100);
+const sliderToPeak = v => Math.round(PEAK_MIN * Math.pow(PEAK_MAX / PEAK_MIN, v / 100));
+const fmtHz = p => p >= 1000 ? (p / 1000).toFixed(p >= 10000 ? 0 : 1) + 'k' : String(p);
 
 // ── Blackbody / thermal scaling ───────────────────────────────
 function thermalScale(intensity, power, scale) {
@@ -50,25 +66,25 @@ const SOURCES = {
 // divColor: the colour used for the frequency scale segment.
 const BANDS = [
   {
-    id: 'IR',      label: 'IR',
+    id: 'IR',      label: 'IR',     freq: 200,
     divColor: '#c04020',
     btnActive: '#b83010',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(-15deg)',
   },
   {
-    id: 'Visible', label: 'Vis',
+    id: 'Visible', label: 'Vis',    freq: 800,
     divColor: '#a09050',
     btnActive: '#706840',
     colorFilter: 'sepia(0.15) saturate(1.4) brightness(1.2)',
   },
   {
-    id: 'UV',      label: 'UV',
+    id: 'UV',      label: 'UV',     freq: 3200,
     divColor: '#8030cc',
     btnActive: '#6b1faa',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(262deg)',
   },
   {
-    id: 'XRay',    label: 'X-Ray',
+    id: 'XRay',    label: 'X-Ray',  freq: 12000,
     divColor: '#2060a0',
     btnActive: '#1e4a7a',
     colorFilter: 'sepia(1) saturate(5) hue-rotate(195deg) brightness(1.4)',
@@ -262,7 +278,7 @@ export default function App() {
         if (drag.from === 'parts') {
           setItems(prev => [...prev, {
             id: uid++, type: drag.type, x, y,
-            amplitude: 50, peak: 0.05, width: 0.08, skew: 0.3,
+            amplitude: 50, peak: 440, width: 0.3, skew: 1.5,
           }]);
         } else {
           setItems(prev =>
@@ -336,32 +352,38 @@ export default function App() {
                     onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
                   <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
                 </div>
-                {/* Peak */}
+                {/* Peak — log scale 20–20 000 Hz */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
-                  <span className="text-[7px] text-zinc-600 shrink-0">IR</span>
-                  <input type="range" min="0" max="100" value={Math.round(item.peak * 100)}
+                  <span className="text-[7px] text-zinc-600 shrink-0">20</span>
+                  <input type="range" min="0" max="100" value={peakToSlider(item.peak)}
                     className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { peak: +e.target.value / 100 })} />
-                  <span className="text-[7px] text-zinc-600 shrink-0">X</span>
+                    onChange={e => updateItem(item.id, { peak: sliderToPeak(+e.target.value) })} />
+                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                    {fmtHz(item.peak)}
+                  </span>
                 </div>
-                {/* Width */}
+                {/* Width 0.01–1.0 */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
                   <span className="text-[7px] text-zinc-600 shrink-0">•</span>
-                  <input type="range" min="0" max="20" value={Math.round(item.width * 100)}
+                  <input type="range" min="1" max="100" value={Math.round(item.width * 100)}
                     className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
                     onChange={e => updateItem(item.id, { width: +e.target.value / 100 })} />
-                  <span className="text-[7px] text-zinc-600 shrink-0">↔</span>
+                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                    {item.width.toFixed(2)}
+                  </span>
                 </div>
-                {/* Skew */}
+                {/* Skew 0.1–5.0 */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Skew</span>
                   <span className="text-[7px] text-zinc-600 shrink-0">∿</span>
-                  <input type="range" min="0" max="100" value={Math.round(item.skew * 100)}
+                  <input type="range" min="1" max="50" value={Math.round(item.skew * 10)}
                     className="flex-1 cursor-pointer accent-fuchsia-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { skew: +e.target.value / 100 })} />
-                  <span className="text-[7px] text-zinc-600 shrink-0 w-6">IR↓</span>
+                    onChange={e => updateItem(item.id, { skew: +e.target.value / 10 })} />
+                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                    {item.skew.toFixed(1)}
+                  </span>
                 </div>
               </div>
               <img src={s.src} alt={s.label} style={{ width: s.w }}
