@@ -3,47 +3,107 @@ import { useState, useRef } from 'react';
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // ── Spectral emission model ───────────────────────────────────
-// Log-normal distribution. bandFreq and peak share the same Hz-like
-// scale (bands at 200/800/3200/12000; peak slider 20–20000).
-// width [0.01–1.0]: log-space sigma multiplier — tight spike vs broad
-// skew  [0.1–5.0]:  sigma = width × skew; higher = wider, longer tail
-// Normalised as a proper log-normal PDF so narrow peaks stay bright and
-// broad curves spread energy across bands without total-energy inflation.
-function spectralEmission(bandFreq, peak, width, skew) {
-  const s = Math.max(width, 0.001);
-  const x = bandFreq / peak;
-
-  // Skew ≈ 0: fall back to a plain Gaussian in linear space
-  if (Math.abs(skew) < 0.001) {
-    return Math.exp(-0.5 * ((bandFreq - peak) / (s * peak)) ** 2);
+// Log-normal PDF. peak and bandFreq share the same Hz scale.
+// widthHz: 1-sigma bandwidth in Hz (stored directly — no unit conversion needed)
+// skew   : sigma = skew × ln(1 + widthHz/peak); higher = wider + longer tail
+// Returns shape value [0,1] at a single frequency. Peak brightness is always 1.0.
+// Asymmetric log-normal: skew stretches the LOW-frequency tail (like a blackbody).
+//   skew=1 → symmetric in log-space
+//   skew=5 → very asymmetric, heavy low-freq tail, fast high-freq cutoff
+function spectralEmission(bandFreq, peak, widthHz, skew) {
+  const w = Math.max(widthHz, 0.1);
+  const p = Math.max(peak, 1);
+  // Saturating sigma: w/(p+w) stays in [0,1) regardless of how small peak gets.
+  // Prevents the above-peak tail from blowing into UV when peak << widthHz.
+  const sigmaBase = w / (p + w);
+  if (sigmaBase < 0.001) {
+    return Math.exp(-0.5 * ((bandFreq - p) / w) ** 2);
   }
-
-  // Log-normal: sharp rise, long right tail — approximates Planck curve
-  const sigma = s * Math.abs(skew);
-  const lnX   = Math.log(x) / sigma;
-  return Math.exp(-0.5 * lnX * lnX) / (x * sigma);
+  const lnX  = Math.log(Math.max(bandFreq, 1e-9) / p);
+  // Below peak: widen tail by skew factor; above peak: use base sigma (fast Wien-like cutoff)
+  const sigma = lnX < 0 ? sigmaBase * Math.abs(skew) : sigmaBase;
+  return Math.exp(-0.5 * (lnX / sigma) ** 2);
 }
 
-// Log-scale helpers for peak slider (20 – 20 000 Hz)
-const PEAK_MIN = 20, PEAK_MAX = 20000;
-const peakToSlider = p => Math.round(Math.log(p / PEAK_MIN) / Math.log(PEAK_MAX / PEAK_MIN) * 100);
-const sliderToPeak = v => Math.round(PEAK_MIN * Math.pow(PEAK_MAX / PEAK_MIN, v / 100));
-const fmtHz = p => p >= 1000 ? (p / 1000).toFixed(p >= 10000 ? 0 : 1) + 'k' : String(p);
+// Abramowitz & Stegun erf approximation, max error 1.5e-7
+function erf(x) {
+  const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
+  return sign * y;
+}
+
+// Analytical integral of the asymmetric log-normal over [lo, hi] in log-frequency space.
+// Returns fraction of total emission captured in [lo, hi] — always in [0, 1].
+// No sampling artifacts: works correctly even when the curve is narrower than any sample grid.
+function bandIntensity(lo, hi, peak, widthHz, skew) {
+  const w = Math.max(widthHz, 0.1);
+  const p = Math.max(peak, 1);
+  const sigmaBase = w / (p + w);
+  const sigma_lo  = sigmaBase * Math.abs(skew); // below-peak sigma (wide, skewed tail)
+  const sigma_hi  = sigmaBase;                  // above-peak sigma (fast Wien-like cutoff)
+  const sq2 = Math.SQRT2;
+
+  // Log-space coordinates relative to peak (peak → u=0)
+  const a = Math.log(Math.max(lo, 1e-9) / p);
+  const b = Math.log(Math.max(hi, 1e-9) / p);
+
+  // Below-peak contribution: integrate from a to min(b, 0) with sigma_lo
+  let below = 0;
+  if (a < 0 && b > a) {
+    const b0 = Math.min(b, 0);
+    below = sigma_lo * (erf(b0 / (sigma_lo * sq2)) - erf(a / (sigma_lo * sq2)));
+  }
+
+  // Above-peak contribution: integrate from max(a, 0) to b with sigma_hi
+  let above = 0;
+  if (b > 0 && b > a) {
+    const a0 = Math.max(a, 0);
+    above = sigma_hi * (erf(b / (sigma_hi * sq2)) - erf(a0 / (sigma_hi * sq2)));
+  }
+
+  // Total emission normalizer (sqrt(π/2) factors cancel in numerator and denominator)
+  // ∫_{-∞}^{0} below-Gaussian du = sigma_lo  ;  ∫_{0}^{+∞} above-Gaussian du = sigma_hi
+  const total = sigma_lo + sigma_hi;
+
+  return (below + above) / total;
+}
+
+// ── Per-type slider config ────────────────────────────────────
+// peak: log-scale range in Hz; widthHz: linear range in Hz
+const SLIDER_CFG = {
+  range: {
+    peakMin: 20,  peakMax: 400,
+    widthMin: 5,  widthMax: 300,
+    peakDefault: 250, widthDefault: 200,
+  },
+  tanbulb: {
+    peakMin: 700,  peakMax: 1500,
+    widthMin: 5,   widthMax: 200,
+    peakDefault: 920, widthDefault: 100, skewDefault: 1.0,
+  },
+};
+// Log-scale peak slider helpers (per type)
+const makePeakConv = (min, max) => ({
+  toSlider:   p => Math.round(Math.log(p / min) / Math.log(max / min) * 100),
+  fromSlider: v => Math.round(min * Math.pow(max / min, v / 100)),
+});
+const fmtHz = p => p >= 1000 ? (p / 1000).toFixed(p >= 10000 ? 0 : 1) + 'k' : String(Math.round(p));
 
 // ── Blackbody / thermal scaling ───────────────────────────────
 function thermalScale(intensity, power, scale) {
-  return Math.pow(clamp(intensity, 0, 1), power) * scale;
+  return Math.pow(Math.max(0, intensity), power) * scale;
 }
 
 // ── Thermal false-colour palette (cold → hot) ─────────────────
 const THERMAL = [
-  { t: 0.05, blur: 80, opacity: 0.40, color: '#110018', imgFilter: 'sepia(1) saturate(4) hue-rotate(258deg) brightness(0.35)' },
-  { t: 0.55, blur: 55, opacity: 0.55, color: '#440060', imgFilter: 'sepia(1) saturate(6) hue-rotate(272deg) brightness(0.55)' },
-  { t: 1.10, blur: 22, opacity: 0.70, color: '#880010', imgFilter: 'sepia(1) saturate(8) hue-rotate(330deg)' },
-  { t: 1.70, blur: 16, opacity: 0.80, color: '#cc2200', imgFilter: 'sepia(1) saturate(8) hue-rotate(-8deg)' },
-  { t: 2.40, blur: 28, opacity: 0.85, color: '#ff6600', imgFilter: 'sepia(1) saturate(7) hue-rotate(-42deg) brightness(1.4)' },
-  { t: 3.20, blur: 52, opacity: 0.90, color: '#ffdd00', imgFilter: 'sepia(0.3) saturate(5) brightness(2.8)' },
-  { t: 4.40, blur: 82, opacity: 1.00, color: '#ffffff', imgFilter: 'brightness(10)' },
+  { t: 0.05, blur: 80, opacity: 0.45, color: '#0d0018', imgFilter: 'sepia(1) saturate(4) hue-rotate(258deg) brightness(0.30)' },
+  { t: 0.60, blur: 58, opacity: 0.60, color: '#3a0060', imgFilter: 'sepia(1) saturate(7) hue-rotate(268deg) brightness(0.50)' },
+  { t: 1.30, blur: 30, opacity: 0.75, color: '#8800cc', imgFilter: 'sepia(1) saturate(9) hue-rotate(276deg) brightness(0.85)' },
+  { t: 2.20, blur: 18, opacity: 0.88, color: '#ff6600', imgFilter: 'sepia(1) saturate(10) hue-rotate(-42deg) brightness(1.5)' },
+  { t: 3.20, blur: 36, opacity: 0.94, color: '#ffaa00', imgFilter: 'sepia(1) saturate(8) hue-rotate(-50deg) brightness(2.2)' },
+  { t: 4.40, blur: 72, opacity: 1.00, color: '#ffffff', imgFilter: 'brightness(10)' },
 ];
 
 // ── Source catalogue ─────────────────────────────────────────
@@ -98,7 +158,7 @@ const hzToPos  = f => Math.log(f / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN);
 // Convert fractional bar position → Hz
 const posToHz  = p => Math.round(FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, p));
 
-let uid = 1;
+let uid = Date.now(); // unique enough across HMR reloads
 
 // ── Emission shape ────────────────────────────────────────────
 function EmissionShape({ item, band, intensity, dev }) {
@@ -110,9 +170,23 @@ function EmissionShape({ item, band, intensity, dev }) {
   if (band.id === 'IR') {
     const therm = thermalScale(intensity, dev.glowPower, dev.glowScale);
     if (s.maskSrc) {
+      const glowOp = clamp((therm - 2.6) / 4.0, 0, 1.0);
       return (
         <div className="absolute pointer-events-none"
           style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {/* Whole-body orange ambient glow — heater only */}
+          {item.type === 'range' && glowOp > 0 && (
+            <img src={s.src}
+              style={{
+                position: 'absolute',
+                top: dev.glowY, left: dev.glowX,
+                width: s.w, height: imgH,
+                filter: 'sepia(1) saturate(14) hue-rotate(-20deg) brightness(2.0) blur(8px)',
+                opacity: glowOp,
+                mixBlendMode: 'screen',
+              }}
+              draggable={false} />
+          )}
           {THERMAL.map((layer, i) => {
             const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
             if (fadeIn <= 0.01) return null;
@@ -181,6 +255,76 @@ function DevSlider({ label, min, max, step, value, onChange, fmt }) {
   );
 }
 
+// ── Emission graph (floats below bench item) ──────────────────
+const GRAPH_SAMPLES = 120;
+function EmissionGraph({ item, bandRanges, width }) {
+  const H = 53; // 44 × 1.2
+  const W = width;
+  const Y_MAX = 80;
+  const PAD = 4;
+
+  // Per-band capture value
+  const captures = bandRanges.map(b => ({
+    ...b,
+    val: bandIntensity(b.lo, b.hi, item.peak, item.widthHz, item.skew) * (item.amplitude / 400),
+  }));
+
+  // CEIL sets full-scale: amplitude=400 peaks at (1/CEIL)^PWR of graph height,
+  // giving the power curve room to work rather than always slamming the top.
+  const CEIL = 1.25, PWR = 1 / 1.25;
+  const pts = [];
+  for (let i = 0; i <= GRAPH_SAMPLES; i++) {
+    const t = i / GRAPH_SAMPLES;
+    const f = FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, t);
+    const v = spectralEmission(f, item.peak, item.widthHz, item.skew) * (item.amplitude / 400);
+    const vScaled = Math.pow(Math.min(v / CEIL, 1), PWR);
+    const y = H - PAD - vScaled * (H - PAD * 2);
+    pts.push([t * W, Math.max(PAD, y)]);
+  }
+  const d = 'M' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+
+  return (
+    <div style={{ width: W, marginTop: -35 }}>
+      {/* Band capture values — above graph, rendered in front of item image */}
+      <div style={{ display: 'flex', width: W, marginBottom: 1, position: 'relative', zIndex: 10 }}>
+        {captures.map(b => (
+          <div key={b.id} style={{ width: b.pct + '%', textAlign: 'center' }}>
+            <span style={{
+              fontSize: 14, fontFamily: 'monospace',
+              color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.2)',
+            }}>
+              {b.val >= 0.005 ? (b.val * Y_MAX).toFixed(1) : '·'}
+            </span>
+          </div>
+        ))}
+      </div>
+      <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+        {/* Band regions */}
+        {bandRanges.map(b => {
+          const x1 = hzToPos(b.lo) * W;
+          const x2 = hzToPos(b.hi) * W;
+          return <rect key={b.id} x={x1} y={0} width={x2 - x1} height={H}
+            fill={b.divColor} opacity={0.18} />;
+        })}
+        {/* Band divider lines */}
+        {bandRanges.slice(0, -1).map(b => {
+          const x = hzToPos(b.hi) * W;
+          return <line key={b.id} x1={x} y1={0} x2={x} y2={H}
+            stroke="rgba(255,255,255,0.15)" strokeWidth={1} />;
+        })}
+        {/* Emission curve */}
+        <path d={d} fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={1.5} />
+        {/* Peak marker */}
+        {(() => {
+          const px = hzToPos(item.peak) * W;
+          return <line x1={px} y1={0} x2={px} y2={H}
+            stroke="rgba(255,255,255,0.30)" strokeWidth={1} strokeDasharray="2,2" />;
+        })()}
+      </svg>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────
 export default function App() {
   const [items,        setItems]        = useState([]);
@@ -189,14 +333,12 @@ export default function App() {
 
   // Frequency-scale dividers in Hz (log scale).
   // Initialised at geometric midpoints between adjacent band freqs.
-  const [dividers, setDividers] = useState([400, 1600, 6200]);
+  const [dividers, setDividers] = useState([400, 800, 5000]);
   const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
 
   // Dev tuning
   const [devBlurScale, setDevBlurScale] = useState(0.08);
-  const [devGlowPower, setDevGlowPower] = useState(0.5);
-  const [devGlowScale, setDevGlowScale] = useState(6.0);
-  const dev = { blurScale: devBlurScale, glowPower: devGlowPower, glowScale: devGlowScale };
+  const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 13, glowY: 20 };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
@@ -287,10 +429,15 @@ export default function App() {
         const x = e.clientX - br.left - drag.ox;
         const y = e.clientY - br.top  - drag.oy;
         if (drag.from === 'parts') {
-          setItems(prev => [...prev, {
-            id: uid++, type: drag.type, x, y,
-            amplitude: 50, peak: 440, width: 0.3, skew: 1.5,
-          }]);
+          setItems(prev => {
+            if (prev.some(it => it.type === drag.type)) return prev; // one of each type only
+            return [...prev, {
+              id: uid++, type: drag.type, x, y,
+              amplitude: 50, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
+              peak: SLIDER_CFG[drag.type].peakDefault,
+              widthHz: SLIDER_CFG[drag.type].widthDefault,
+            }];
+          });
         } else {
           setItems(prev =>
             prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
@@ -312,9 +459,10 @@ export default function App() {
       {/* ══════════════════════════════════════════
           TOP HALF — Lab Bench
       ══════════════════════════════════════════ */}
-      <div className="h-1/2 relative overflow-hidden" ref={benchRef}>
-        <img src="images/Table.PNG"
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+      <div className="h-1/2 relative" ref={benchRef} style={{ marginTop: 30 }}>
+        <img src={`images/Table.PNG?v=${Date.now()}`}
+          className="absolute left-0 w-full pointer-events-none"
+          style={{ height: 'auto', top: -55, width: '100%' }}
           draggable={false} />
 
         {/* Parts box */}
@@ -363,33 +511,44 @@ export default function App() {
                     onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
                   <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
                 </div>
-                {/* Peak — log scale 20–20 000 Hz */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
-                  <span className="text-[7px] text-zinc-600 shrink-0">20</span>
-                  <input type="range" min="0" max="100" value={peakToSlider(item.peak)}
-                    className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { peak: sliderToPeak(+e.target.value) })} />
-                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
-                    {fmtHz(item.peak)}
-                  </span>
-                </div>
-                {/* Width 0.01–1.0, displayed as ±Hz bandwidth */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
-                  <span className="text-[7px] text-zinc-600 shrink-0">•</span>
-                  <input type="range" min="1" max="100" value={Math.round(item.width * 100)}
-                    className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { width: +e.target.value / 100 })} />
-                  <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
-                    ±{fmtHz(Math.round(item.peak * (Math.exp(item.width * item.skew) - 1)))}
-                  </span>
-                </div>
+                {/* Peak — log scale, per-type range */}
+                {(() => {
+                  const cfg  = SLIDER_CFG[item.type];
+                  const conv = makePeakConv(cfg.peakMin, cfg.peakMax);
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
+                      <span className="text-[7px] text-zinc-600 shrink-0">{fmtHz(cfg.peakMin)}</span>
+                      <input type="range" min="0" max="100" value={conv.toSlider(item.peak)}
+                        className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { peak: conv.fromSlider(+e.target.value) })} />
+                      <span className="text-[7px] text-zinc-500 w-8 text-right tabular-nums shrink-0">
+                        {fmtHz(item.peak)} Hz
+                      </span>
+                    </div>
+                  );
+                })()}
+                {/* Width — direct Hz, per-type range */}
+                {(() => {
+                  const cfg = SLIDER_CFG[item.type];
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
+                      <span className="text-[7px] text-zinc-600 shrink-0">±{cfg.widthMin}</span>
+                      <input type="range" min={cfg.widthMin} max={cfg.widthMax} value={item.widthHz}
+                        className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { widthHz: +e.target.value })} />
+                      <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
+                        ±{fmtHz(item.widthHz)} Hz
+                      </span>
+                    </div>
+                  );
+                })()}
                 {/* Skew 0.1–5.0 */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Skew</span>
                   <span className="text-[7px] text-zinc-600 shrink-0">∿</span>
-                  <input type="range" min="1" max="50" value={Math.round(item.skew * 10)}
+                  <input type="range" min="10" max="50" value={Math.round(item.skew * 10)}
                     className="flex-1 cursor-pointer accent-fuchsia-400" style={{ height: '3px' }}
                     onChange={e => updateItem(item.id, { skew: +e.target.value / 10 })} />
                   <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
@@ -401,6 +560,7 @@ export default function App() {
                 className="drop-shadow-lg cursor-grab active:cursor-grabbing block"
                 draggable={false}
                 onPointerDown={(e) => startBenchDrag(e, item)} />
+              <EmissionGraph item={item} bandRanges={bandRanges} width={s.w} />
             </div>
           );
         })}
@@ -409,8 +569,8 @@ export default function App() {
       {/* ══════════════════════════════════════════
           BOTTOM HALF — Camera View
       ══════════════════════════════════════════ */}
-      <div className="h-1/2 relative overflow-hidden border-t border-zinc-800"
-        style={{ background: selectedBand === 'IR' ? '#38006a' : '#000' }}>
+      <div className="relative overflow-hidden border-t border-zinc-800"
+        style={{ marginTop: 50, height: 'calc(50% - 50px)', background: selectedBand === 'IR' ? '#38006a' : '#000' }}>
 
         {/* Glow viewport */}
         {items.length === 0 ? (
@@ -425,18 +585,20 @@ export default function App() {
                 backgroundImage: 'repeating-linear-gradient(transparent, transparent 3px, rgba(255,255,255,0.013) 3px, rgba(255,255,255,0.013) 4px)',
                 backgroundSize:  '100% 4px',
               }} />
-            {items.map(item => {
-              const intensity = spectralEmission(band.freq, item.peak, item.width, item.skew)
-                              * (item.amplitude / 100);
-              return (
-                <EmissionShape key={item.id} item={item} band={band} intensity={intensity} dev={dev} />
-              );
-            })}
+            <div style={{ position: 'absolute', inset: 0, top: -90 }}>
+              {items.map(item => {
+                const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
+                                * (item.amplitude / 400);
+                return (
+                  <EmissionShape key={item.id} item={item} band={band} intensity={intensity} dev={dev} />
+                );
+              })}
+            </div>
           </>
         )}
 
         {/* ── Camera band scale + buttons ── */}
-        <div className="absolute top-0 left-0 right-0 z-10 border-b border-zinc-800/80 backdrop-blur-sm"
+        <div className="absolute left-0 right-0 z-10 border-b border-zinc-800/80 backdrop-blur-sm" style={{ top: 50 }}
           style={{ background: 'rgba(9,9,11,0.92)' }}>
 
           {/* "Camera" label row */}
@@ -450,13 +612,14 @@ export default function App() {
               const isActive = selectedBand === b.id;
               return (
                 <div key={b.id}
-                  className="relative flex flex-col items-center justify-center overflow-visible"
+                  className="relative flex flex-col items-center justify-center overflow-visible cursor-pointer"
                   style={{
                     width: `${b.pct}%`,
                     background: isActive ? b.divColor + '50' : b.divColor + '1a',
                     borderRight: bi < 3 ? '1px solid rgba(255,255,255,0.07)' : 'none',
                     transition: 'background 0.1s',
-                  }}>
+                  }}
+                  onClick={() => setSelectedBand(b.id)}>
 
                   {/* Active indicator strip at top */}
                   {isActive && (
@@ -465,13 +628,12 @@ export default function App() {
                   )}
 
                   {/* Band label */}
-                  <button
+                  <span
                     className="text-[11px] font-semibold tracking-wide leading-none
                                transition-colors duration-100 z-10 relative w-full text-center"
-                    style={{ color: isActive ? '#fff' : b.divColor + 'aa' }}
-                    onClick={() => setSelectedBand(b.id)}>
+                    style={{ color: isActive ? '#fff' : b.divColor + 'aa' }}>
                     {b.label}
-                  </button>
+                  </span>
 
                   {/* Hz range */}
                   <span className="text-[7px] leading-none mt-0.5 tabular-nums"
@@ -484,7 +646,7 @@ export default function App() {
                     <div
                       className="absolute top-0 bottom-0 z-20 flex items-center justify-center"
                       style={{ right: -5, width: 10, cursor: 'col-resize' }}
-                      onPointerDown={e => startDivDrag(e, bi)}>
+                      onPointerDown={e => { e.stopPropagation(); startDivDrag(e, bi); }}>
                       <div
                         className="rounded-full transition-all duration-100"
                         style={{
@@ -509,10 +671,6 @@ export default function App() {
           <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
           <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
             value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
-          <DevSlider label="Glow Power" min={0.5} max={4.0} step={0.05}
-            value={devGlowPower} onChange={setDevGlowPower} fmt={v => v.toFixed(2)} />
-          <DevSlider label="Glow Scale" min={0.2} max={6.0} step={0.1}
-            value={devGlowScale} onChange={setDevGlowScale} fmt={v => v.toFixed(1)} />
         </div>
       </div>
 
