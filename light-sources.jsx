@@ -91,8 +91,12 @@ const BANDS = [
   },
 ];
 
-// Min fraction each segment may occupy (prevents collapsing)
-const MIN_SEG = 0.06;
+// Frequency axis bounds (shared by peak slider, dividers, and scale bar)
+const FREQ_MIN = 20, FREQ_MAX = 20000;
+// Convert Hz → fractional position on the log scale bar [0,1]
+const hzToPos  = f => Math.log(f / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN);
+// Convert fractional bar position → Hz
+const posToHz  = p => Math.round(FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, p));
 
 let uid = 1;
 
@@ -183,9 +187,9 @@ export default function App() {
   const [drag,         setDrag]         = useState(null);
   const [selectedBand, setSelectedBand] = useState('IR');
 
-  // Frequency-scale dividers: 3 positions splitting 4 band segments
-  // [IR|Vis divider, Vis|UV divider, UV|XRay divider] in [0,1]
-  const [dividers, setDividers] = useState([0.25, 0.52, 0.76]);
+  // Frequency-scale dividers in Hz (log scale).
+  // Initialised at geometric midpoints between adjacent band freqs.
+  const [dividers, setDividers] = useState([400, 1600, 6200]);
   const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
 
   // Dev tuning
@@ -194,13 +198,18 @@ export default function App() {
   const [devGlowScale, setDevGlowScale] = useState(6.0);
   const dev = { blurScale: devBlurScale, glowPower: devGlowPower, glowScale: devGlowScale };
 
-  // Compute band ranges from dividers; each band's freq = midpoint
+  // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
+  // pct = visual width % on the log-scale bar.
   const bandRanges = [
-    { ...BANDS[0], lo: 0,           hi: dividers[0] },
+    { ...BANDS[0], lo: FREQ_MIN,    hi: dividers[0] },
     { ...BANDS[1], lo: dividers[0], hi: dividers[1] },
     { ...BANDS[2], lo: dividers[1], hi: dividers[2] },
-    { ...BANDS[3], lo: dividers[2], hi: 1           },
-  ].map(b => ({ ...b, freq: (b.lo + b.hi) / 2 }));
+    { ...BANDS[3], lo: dividers[2], hi: FREQ_MAX    },
+  ].map(b => ({
+    ...b,
+    freq: Math.round(Math.sqrt(b.lo * b.hi)),           // geometric mean
+    pct:  (hzToPos(b.hi) - hzToPos(b.lo)) * 100,       // visual width %
+  }));
 
   const band = bandRanges.find(b => b.id === selectedBand);
 
@@ -244,12 +253,14 @@ export default function App() {
   const onMove = (e) => {
     if (divDrag) {
       const { idx, barLeft, barWidth } = divDrag;
-      const t = clamp((e.clientX - barLeft) / barWidth, 0, 1);
+      const pos = clamp((e.clientX - barLeft) / barWidth, 0, 1);
+      const hz  = posToHz(pos);
       setDividers(prev => {
         const next = [...prev];
-        const lo = idx === 0 ? MIN_SEG       : prev[idx - 1] + MIN_SEG;
-        const hi = idx === 2 ? 1 - MIN_SEG   : prev[idx + 1] - MIN_SEG;
-        next[idx] = clamp(t, lo, hi);
+        // Keep at least 1 octave (factor 2) between adjacent dividers/edges
+        const lo = idx === 0 ? FREQ_MIN * 2   : prev[idx - 1] * 2;
+        const hi = idx === 2 ? FREQ_MAX / 2   : prev[idx + 1] / 2;
+        next[idx] = clamp(hz, lo, hi);
         return next;
       });
       return;
@@ -363,15 +374,15 @@ export default function App() {
                     {fmtHz(item.peak)}
                   </span>
                 </div>
-                {/* Width 0.01–1.0 */}
+                {/* Width 0.01–1.0, displayed as ±Hz bandwidth */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
                   <span className="text-[7px] text-zinc-600 shrink-0">•</span>
                   <input type="range" min="1" max="100" value={Math.round(item.width * 100)}
                     className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
                     onChange={e => updateItem(item.id, { width: +e.target.value / 100 })} />
-                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
-                    {item.width.toFixed(2)}
+                  <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
+                    ±{fmtHz(Math.round(item.peak * (Math.exp(item.width * item.skew) - 1)))}
                   </span>
                 </div>
                 {/* Skew 0.1–5.0 */}
@@ -433,16 +444,15 @@ export default function App() {
             <span className="text-zinc-600 text-[8px] uppercase tracking-widest">Camera</span>
           </div>
 
-          {/* Frequency scale — draggable band columns */}
-          <div ref={scaleRef} className="flex h-9 relative">
+          {/* Frequency scale — draggable band columns, log Hz axis */}
+          <div ref={scaleRef} className="flex h-11 relative">
             {bandRanges.map((b, bi) => {
               const isActive = selectedBand === b.id;
-              const pct = (b.hi - b.lo) * 100;
               return (
                 <div key={b.id}
-                  className="relative flex items-center justify-center overflow-visible"
+                  className="relative flex flex-col items-center justify-center overflow-visible"
                   style={{
-                    width: `${pct}%`,
+                    width: `${b.pct}%`,
                     background: isActive ? b.divColor + '50' : b.divColor + '1a',
                     borderRight: bi < 3 ? '1px solid rgba(255,255,255,0.07)' : 'none',
                     transition: 'background 0.1s',
@@ -454,19 +464,25 @@ export default function App() {
                       style={{ background: b.divColor }} />
                   )}
 
-                  {/* Band button */}
+                  {/* Band label */}
                   <button
-                    className="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide
+                    className="text-[11px] font-semibold tracking-wide leading-none
                                transition-colors duration-100 z-10 relative w-full text-center"
                     style={{ color: isActive ? '#fff' : b.divColor + 'aa' }}
                     onClick={() => setSelectedBand(b.id)}>
                     {b.label}
                   </button>
 
+                  {/* Hz range */}
+                  <span className="text-[7px] leading-none mt-0.5 tabular-nums"
+                    style={{ color: isActive ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.18)' }}>
+                    {fmtHz(b.lo)}–{fmtHz(b.hi)}
+                  </span>
+
                   {/* Draggable divider handle — right edge */}
                   {bi < 3 && (
                     <div
-                      className="absolute top-0 bottom-0 z-20 flex items-center justify-center group"
+                      className="absolute top-0 bottom-0 z-20 flex items-center justify-center"
                       style={{ right: -5, width: 10, cursor: 'col-resize' }}
                       onPointerDown={e => startDivDrag(e, bi)}>
                       <div
