@@ -173,9 +173,9 @@ export default function App() {
   const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
 
   // Dev tuning
-  const [devBlurScale, setDevBlurScale] = useState(0.1);
-  const [devGlowPower, setDevGlowPower] = useState(1.5);
-  const [devGlowScale, setDevGlowScale] = useState(1.5);
+  const [devBlurScale, setDevBlurScale] = useState(0.08);
+  const [devGlowPower, setDevGlowPower] = useState(0.5);
+  const [devGlowScale, setDevGlowScale] = useState(6.0);
   const dev = { blurScale: devBlurScale, glowPower: devGlowPower, glowScale: devGlowScale };
 
   // Compute band ranges from dividers; each band's freq = midpoint
