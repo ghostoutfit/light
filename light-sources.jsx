@@ -66,11 +66,9 @@ function bandIntensity(lo, hi, peak, widthHz, skew) {
     above = sigma_hi * (erf(b / (sigma_hi * sq2)) - erf(a0 / (sigma_hi * sq2)));
   }
 
-  // Total emission normalizer (sqrt(π/2) factors cancel in numerator and denominator)
-  // ∫_{-∞}^{0} below-Gaussian du = sigma_lo  ;  ∫_{0}^{+∞} above-Gaussian du = sigma_hi
-  const total = sigma_lo + sigma_hi;
-
-  return (below + above) / total;
+  // Return absolute captured emission — wider/more-skewed distributions emit more total light,
+  // just like higher amplitude does. Values proportional to sigma (width-scaled).
+  return below + above;
 }
 
 // ── Per-type slider config ────────────────────────────────────
@@ -85,6 +83,11 @@ const SLIDER_CFG = {
     peakMin: 700,  peakMax: 1500,
     widthMin: 5,   widthMax: 200,
     peakDefault: 890, widthDefault: 100, skewDefault: 1.0,
+  },
+  bulb: {
+    peakMin: 400,  peakMax: 1200,
+    widthMin: 5,   widthMax: 300,
+    peakDefault: 614, widthDefault: 173, skewDefault: 4.2,
   },
 };
 // Log-scale peak slider helpers (per type)
@@ -161,6 +164,13 @@ const SOURCES = {
     maskSrc: 'images/TanbulbElement.png',
     w: 420, natW: 737, natH: 409,
   },
+  bulb: {
+    label: 'Light Bulb',
+    src:         'images/Bulb.png',
+    outsideSrc:  'images/BulbOutside.png',
+    filamentSrc: 'images/BulbFilament.png',
+    w: 200, natW: 324, natH: 453,
+  },
 };
 
 // ── Camera bands ──────────────────────────────────────────────
@@ -201,6 +211,8 @@ const posToHz  = p => Math.round(FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, p));
 
 let uid = Date.now(); // unique enough across HMR reloads
 
+const EMOJI_LIST = ['⚽', '🏹', '⚡', '🐉', '💓'];
+
 // ── Emission shape ────────────────────────────────────────────
 function EmissionShape({ item, band, intensity, dev }) {
   if (intensity < 0.005) return null;
@@ -210,6 +222,35 @@ function EmissionShape({ item, band, intensity, dev }) {
 
   if (band.id === 'IR') {
     const therm = thermalScale(intensity, dev.glowPower, dev.glowScale);
+
+    if (item.type === 'bulb') {
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {THERMAL.map((layer, i) => {
+            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return [
+              <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} brightness(${dev.bulbOutsideMag}) blur(${dev.bulbOutsideBlur}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+              <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} brightness(${dev.bulbFilamentMag}) blur(${dev.bulbFilamentBlur}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+            ];
+          })}
+        </div>
+      );
+    }
+
     if (s.maskSrc) {
       const glowOp = clamp((therm - 2.6) / 4.0, 0, 1.0);
       return (
@@ -255,6 +296,32 @@ function EmissionShape({ item, band, intensity, dev }) {
   const blurD = (2  + ic * 8)  * dev.blurScale;
   const blurB = (10 + ic * 40) * dev.blurScale;
   const op    = clamp(ic, 0, 1);
+
+  if (item.type === 'bulb') {
+    const camR      = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
+    const bulbBlurB = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
+    const camBright = 3.5;
+    const mY = dev.maskY[item.type];
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        {/* Outside — wide bloom */}
+        <img src={s.outsideSrc} draggable={false}
+          style={{
+            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+            filter: `brightness(${bloom * camBright * 10}) contrast(20) blur(${bulbBlurB}px)`,
+            opacity: Math.min(camR * 1.05, 1), mixBlendMode: 'screen',
+          }} />
+        {/* Filament — tight core */}
+        <img src={s.filamentSrc} draggable={false}
+          style={{
+            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+            filter: `brightness(${sharp * camBright * 10}) contrast(20) blur(${dev.bulbFilamentBlur}px)`,
+            opacity: Math.min(camR * 1.05, 1), mixBlendMode: 'screen',
+          }} />
+      </div>
+    );
+  }
 
   if (s.maskSrc) {
     const mX = dev.maskX, mY = dev.maskY[item.type];
@@ -382,15 +449,28 @@ export default function App() {
   const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
 
   // Dev tuning
-  const [devBlurScale,  setDevBlurScale]  = useState(0.08);
+  const [devBlurScale,        setDevBlurScale]        = useState(0.08);
+  const [devBulbVisBright,    setDevBulbVisBright]    = useState(20.0);
+  const [devBulbCamMax,       setDevBulbCamMax]       = useState(0.6);
+  const [emojis, setEmojis] = useState(() =>
+    EMOJI_LIST.map((emoji, i) => ({
+      id: `em${i}`, emoji,
+      x: window.innerWidth - 175 + i * 33,
+      y: 12,
+    }))
+  );
+  const [emojiDrag, setEmojiDrag] = useState(null);
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 13, glowY: 22, maskX: 0,
-    maskY: { range: 0, tanbulb: 20 },
-    benchX: { range: -12, tanbulb: 2 }, benchY: { range: -26, tanbulb: -10 },
-    visOpacity: { range: 5.0,   tanbulb: 5.0 },
-    visHue:     { range: -8,    tanbulb: -75 },
-    visBlur:    { range: 3.0,   tanbulb: 4.0 },
-    visSat:     { range: 5.0,   tanbulb: 20.0 },
-    visBright:  { range: 1.0,   tanbulb: 1.0 } };
+    bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
+    bulbOutsideBlur: 39, bulbFilamentBlur: 4,
+    bulbOutsideMag: 21.5, bulbFilamentMag: 38,
+    maskY: { range: 0, tanbulb: 20, bulb: 20 },
+    benchX: { range: -12, tanbulb: 2, bulb: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0 },
+    visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0 },
+    visHue:     { range: -8,    tanbulb: -75,   bulb: 0 },
+    visBlur:    { range: 3.0,   tanbulb: 4.0,   bulb: 3.0 },
+    visSat:     { range: 5.0,   tanbulb: 20.0,  bulb: 8.0 },
+    visBright:  { range: 1.0,   tanbulb: 1.0,   bulb: 1.0 } };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
@@ -445,6 +525,15 @@ export default function App() {
   };
 
   const onMove = (e) => {
+    if (emojiDrag && benchRef.current) {
+      const br = benchRef.current.getBoundingClientRect();
+      setEmojis(prev => prev.map(em =>
+        em.id === emojiDrag.id
+          ? { ...em, x: e.clientX - br.left - emojiDrag.ox, y: e.clientY - br.top - emojiDrag.oy }
+          : em
+      ));
+      return;
+    }
     if (divDrag) {
       const { idx, barLeft, barWidth } = divDrag;
       const pos = clamp((e.clientX - barLeft) / barWidth, 0, 1);
@@ -463,6 +552,7 @@ export default function App() {
   };
 
   const onUp = (e) => {
+    if (emojiDrag) { setEmojiDrag(null); return; }
     if (divDrag) { setDivDrag(null); return; }
     if (!drag) return;
     if (drag.from === 'bench' && partsRef.current) {
@@ -566,6 +656,8 @@ export default function App() {
           const [gr, gg, gb] = spectrumToRgb(item, visBand);
           const glowColor = item.type === 'range'
             ? 'rgb(255,40,0)'
+            : item.type === 'bulb'
+            ? 'rgb(255,160,0)'
             : `rgb(${Math.round(gamma(gr)*255)},${Math.round(gamma(gg)*255)},${Math.round(gamma(gb)*255)})`;
 
           return (
@@ -639,6 +731,40 @@ export default function App() {
                   className="drop-shadow-lg cursor-grab active:cursor-grabbing"
                   draggable={false}
                   onPointerDown={(e) => startBenchDrag(e, item)} />
+                {item.type === 'bulb' && visIntensity > 0.005 && (() => {
+                  const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
+                  const bulbR     = Math.pow(visC, 1.8); // gradual at low, steeper toward high
+                  const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type]; // min 10px, max 20px
+                  const color = 'rgb(255,160,0)';
+                  const colorFilter      = `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]})`;
+                  const filamentColorFilter = `hue-rotate(${dev.visHue[item.type] - 20}deg) saturate(${dev.visSat[item.type]})`;
+                  return (
+                    <>
+                      {/* Outside — wide bloom */}
+                      <div style={{
+                        position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
+                        filter: `blur(${bulbBlurB}px) brightness(${dev.bulbVisBright})`,
+                        opacity: bulbR * 0.95, mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
+                      }}>
+                        <img src={s.outsideSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: colorFilter }} />
+                      </div>
+                      {/* Filament — tight core */}
+                      <div style={{
+                        position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
+                        filter: `blur(${visBlurD}px) brightness(${dev.bulbVisBright * 0.5})`,
+                        opacity: clamp(visOp * dev.bulbVisBright / 2, 0, 1), mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
+                      }}>
+                        <img src={s.filamentSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: filamentColorFilter }} />
+                      </div>
+                    </>
+                  );
+                })()}
                 {s.maskSrc && visIntensity > 0.005 && (
                   <>
                     {/* Bloom — wide soft layer */}
@@ -675,6 +801,25 @@ export default function App() {
             </div>
           );
         })}
+
+        {/* Emoji objects — draggable, always in front */}
+        {emojis.map(em => (
+          <div key={em.id}
+            style={{
+              position: 'absolute', left: em.x, top: em.y,
+              zIndex: 40, cursor: emojiDrag?.id === em.id ? 'grabbing' : 'grab',
+              userSelect: 'none', touchAction: 'none',
+            }}
+            onPointerDown={e => {
+              e.stopPropagation();
+              const br = benchRef.current.getBoundingClientRect();
+              setEmojiDrag({ id: em.id, ox: e.clientX - br.left - em.x, oy: e.clientY - br.top - em.y });
+            }}>
+            <span style={{ fontSize: 96, lineHeight: 1, display: 'block' }}>
+              {em.emoji}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* ══════════════════════════════════════════
@@ -704,12 +849,25 @@ export default function App() {
                   <EmissionShape key={item.id} item={item} band={band} intensity={intensity} dev={dev} />
                 );
               })}
+              {/* Emoji occluders — block all emission using the emoji's own silhouette */}
+              {emojis.map(em => (
+                <span key={em.id} style={{
+                  position: 'absolute', left: em.x, top: em.y,
+                  fontSize: 96, lineHeight: 1, display: 'block',
+                  filter: 'brightness(0)',
+                  opacity: band.id === 'IR' ? 0.5 : 1,
+                  zIndex: 20,
+                  userSelect: 'none', pointerEvents: 'none',
+                }}>
+                  {em.emoji}
+                </span>
+              ))}
             </div>
           </>
         )}
 
         {/* ── Camera band scale + buttons ── */}
-        <div className="absolute left-0 right-0 z-10 border-b border-zinc-800/80 backdrop-blur-sm"
+        <div className="absolute left-0 right-0 z-30 border-b border-zinc-800/80 backdrop-blur-sm"
           style={{ top: 0, background: 'rgba(9,9,11,0.92)' }}>
 
           {/* "Camera" label row */}
@@ -782,6 +940,10 @@ export default function App() {
           <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
           <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
             value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
+          <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
+            value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
+          <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
+            value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
         </div>
       </div>
 
