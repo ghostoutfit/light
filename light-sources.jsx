@@ -162,14 +162,14 @@ const SOURCES = {
     label: 'Tanning Bulb',
     src:   'images/Tanbulb.png',
     maskSrc: 'images/TanbulbElement.png',
-    w: 420, natW: 737, natH: 409,
+    w: 357, natW: 737, natH: 409,
   },
   bulb: {
     label: 'Light Bulb',
     src:         'images/Bulb.png',
     outsideSrc:  'images/BulbOutside.png',
     filamentSrc: 'images/BulbFilament.png',
-    w: 200, natW: 324, natH: 453,
+    w: 170, natW: 324, natH: 453,
   },
 };
 
@@ -276,7 +276,7 @@ function EmissionShape({ item, band, intensity, dev }) {
               <img key={i} src={s.maskSrc}
                 style={{
                   position: 'absolute',
-                  top: dev.maskY[item.type], left: dev.maskX,
+                  top: dev.maskY[item.type], left: dev.maskX[item.type],
                   width: s.w, height: imgH,
                   filter: `${layer.imgFilter} blur(${layer.blur * dev.blurScale}px)`,
                   opacity: fadeIn * layer.opacity,
@@ -290,7 +290,7 @@ function EmissionShape({ item, band, intensity, dev }) {
     }
   }
 
-  const ic    = visCurve(intensity);
+  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : intensity);
   const sharp = clamp(1 + ic * 4,   1, 5);
   const bloom = clamp(1 + ic * 5,   1, 6);
   const blurD = (2  + ic * 8)  * dev.blurScale;
@@ -324,7 +324,7 @@ function EmissionShape({ item, band, intensity, dev }) {
   }
 
   if (s.maskSrc) {
-    const mX = dev.maskX, mY = dev.maskY[item.type];
+    const mX = dev.maskX[item.type], mY = dev.maskY[item.type];
     return (
       <div className="absolute pointer-events-none"
         style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
@@ -385,7 +385,7 @@ function EmissionGraph({ item, bandRanges, width }) {
           <div key={b.id} style={{ width: b.pct + '%', textAlign: 'center' }}>
             <span style={{
               fontSize: 14, fontFamily: 'monospace',
-              color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.2)',
+              color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.4)',
             }}>
               {b.val >= 0.005 ? (b.val * Y_MAX).toFixed(1) : '·'}
             </span>
@@ -398,21 +398,21 @@ function EmissionGraph({ item, bandRanges, width }) {
           const x1 = hzToPos(b.lo) * W;
           const x2 = hzToPos(b.hi) * W;
           return <rect key={b.id} x={x1} y={0} width={x2 - x1} height={H}
-            fill={b.divColor} opacity={0.18} />;
+            fill={b.divColor} opacity={0.36} />;
         })}
         {/* Band divider lines */}
         {bandRanges.slice(0, -1).map(b => {
           const x = hzToPos(b.hi) * W;
           return <line key={b.id} x1={x} y1={0} x2={x} y2={H}
-            stroke="rgba(255,255,255,0.15)" strokeWidth={1} />;
+            stroke="rgba(255,255,255,0.30)" strokeWidth={1} />;
         })}
         {/* Emission curve */}
-        <path d={d} fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={1.5} />
+        <path d={d} fill="none" stroke="rgba(255,255,255,1)" strokeWidth={1.5} />
         {/* Peak marker */}
         {(() => {
           const px = hzToPos(item.peak) * W;
           return <line x1={px} y1={0} x2={px} y2={H}
-            stroke="rgba(255,255,255,0.30)" strokeWidth={1} strokeDasharray="2,2" />;
+            stroke="rgba(255,255,255,0.60)" strokeWidth={1} strokeDasharray="2,2" />;
         })()}
       </svg>
     </div>
@@ -460,11 +460,15 @@ export default function App() {
     }))
   );
   const [emojiDrag, setEmojiDrag] = useState(null);
-  const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 13, glowY: 22, maskX: 0,
+  const [splitPct, setSplitPct] = useState(50);
+  const [hDrag, setHDrag] = useState(null);
+  const [camPanY, setCamPanY] = useState(200);
+  const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 39, bulbFilamentBlur: 4,
     bulbOutsideMag: 21.5, bulbFilamentMag: 38,
-    maskY: { range: 0, tanbulb: 20, bulb: 20 },
+    maskX: { range: -11, tanbulb: -9, bulb: 0 },
+    maskY: { range: -25, tanbulb: -5, bulb: 2 },
     benchX: { range: -12, tanbulb: 2, bulb: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0 },
     visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0 },
     visHue:     { range: -8,    tanbulb: -75,   bulb: 0 },
@@ -525,6 +529,11 @@ export default function App() {
   };
 
   const onMove = (e) => {
+    if (hDrag) {
+      const newPct = clamp(hDrag.startPct + (e.clientY - hDrag.startY) / window.innerHeight * 100, 20, 80);
+      setSplitPct(newPct);
+      return;
+    }
     if (emojiDrag && benchRef.current) {
       const br = benchRef.current.getBoundingClientRect();
       setEmojis(prev => prev.map(em =>
@@ -552,6 +561,7 @@ export default function App() {
   };
 
   const onUp = (e) => {
+    if (hDrag) { setHDrag(null); return; }
     if (emojiDrag) { setEmojiDrag(null); return; }
     if (divDrag) { setDivDrag(null); return; }
     if (!drag) return;
@@ -596,14 +606,14 @@ export default function App() {
   return (
     <div
       className="h-screen w-screen flex flex-col select-none overflow-hidden"
-      style={{ cursor: divDrag ? 'col-resize' : undefined }}
+      style={{ cursor: hDrag ? 'row-resize' : divDrag ? 'col-resize' : undefined }}
       onPointerMove={onMove}
       onPointerUp={onUp}
     >
       {/* ══════════════════════════════════════════
           TOP HALF — Lab Bench
       ══════════════════════════════════════════ */}
-      <div className="h-1/2 relative" ref={benchRef} style={{ marginTop: 30 }}>
+      <div className="relative" ref={benchRef} style={{ height: `${splitPct}%`, marginTop: 30 }}>
         <img src={`images/Table.PNG?v=${Date.now()}`}
           className="absolute left-0 w-full pointer-events-none"
           style={{ height: 'auto', top: -55, width: '100%' }}
@@ -660,16 +670,23 @@ export default function App() {
             ? 'rgb(255,160,0)'
             : `rgb(${Math.round(gamma(gr)*255)},${Math.round(gamma(gg)*255)},${Math.round(gamma(gb)*255)})`;
 
+          const panelW   = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
+          const bgExtend = item.type === 'bulb' ? 35 : 0;
+          const panelOff = Math.round((s.w - panelW) / 2);
+
           return (
             <div key={item.id} className="absolute touch-none"
               style={{ left: item.x, top: item.y, width: s.w }}>
-              <div className="absolute left-0 right-0" style={{ bottom: '100%', marginBottom: 4 }}>
-                <EmissionGraph item={item} bandRanges={bandRanges} width={s.w} />
+              <div className="absolute" style={{ bottom: '100%', marginBottom: 4, left: panelOff, width: panelW }}>
+                <EmissionGraph item={item} bandRanges={bandRanges} width={panelW} />
               </div>
               <div
-                className="absolute left-0 right-0 rounded-lg px-2 py-2 flex flex-col gap-1.5
+                className="absolute rounded-lg px-2 py-2 flex flex-col gap-1.5
                            border border-white/10 backdrop-blur-sm"
-                style={{ top: '100%', marginTop: -6, background: 'rgba(0,0,0,0.65)' }}
+                style={{
+                  top: '100%', marginTop: -6, background: 'rgba(0,0,0,0.65)',
+                  left: panelOff - bgExtend, width: panelW + bgExtend * 2,
+                }}
                 onPointerDown={e => e.stopPropagation()}>
                 {/* Amplitude */}
                 <div className="flex items-center gap-1.5">
@@ -825,8 +842,40 @@ export default function App() {
       {/* ══════════════════════════════════════════
           BOTTOM HALF — Camera View
       ══════════════════════════════════════════ */}
-      <div className="relative overflow-hidden border-t border-zinc-800"
-        style={{ marginTop: 50, height: 'calc(50% - 50px)', background: selectedBand === 'IR' ? '#38006a' : '#000' }}>
+      {/* Draggable horizontal divider */}
+      <div
+        style={{
+          height: 8, cursor: 'row-resize', flexShrink: 0,
+          background: hDrag ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+          borderTop: '1px solid rgba(255,255,255,0.12)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          transition: 'background 0.1s',
+        }}
+        onPointerDown={e => {
+          e.preventDefault();
+          setHDrag({ startY: e.clientY, startPct: splitPct });
+        }}
+      />
+
+      <div className="relative overflow-hidden"
+        style={{ flex: 1, background: selectedBand === 'IR' ? '#38006a' : '#000' }}>
+
+        {/* Pan slider */}
+        <div style={{
+          position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)',
+          zIndex: 15, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+          pointerEvents: 'auto',
+        }}>
+          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>▲</span>
+          <div style={{ width: 20, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <input type="range" min={0} max={400} step={1} value={camPanY}
+              onChange={e => setCamPanY(+e.target.value)}
+              style={{ width: 100, height: 16, transform: 'rotate(-90deg)', cursor: 'ns-resize', accentColor: 'rgba(255,255,255,0.45)' }}
+            />
+          </div>
+          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>▼</span>
+          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 }}>Tilt</span>
+        </div>
 
         {/* Glow viewport */}
         {items.length === 0 ? (
@@ -841,7 +890,7 @@ export default function App() {
                 backgroundImage: 'repeating-linear-gradient(transparent, transparent 3px, rgba(255,255,255,0.013) 3px, rgba(255,255,255,0.013) 4px)',
                 backgroundSize:  '100% 4px',
               }} />
-            <div style={{ position: 'absolute', inset: 0, top: -70 }}>
+            <div style={{ position: 'absolute', inset: 0, top: -70 + camPanY }}>
               {items.map(item => {
                 const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
                                 * (item.amplitude / 400);
