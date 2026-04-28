@@ -590,7 +590,7 @@ export default function App() {
             if (prev.some(it => it.type === drag.type)) return prev;
             return [...prev, {
               id: uid++, type: drag.type, x, y,
-              amplitude: 50, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
+              amplitude: 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
               peak: SLIDER_CFG[drag.type].peakDefault,
               widthHz: SLIDER_CFG[drag.type].widthDefault,
             }];
