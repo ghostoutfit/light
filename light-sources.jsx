@@ -520,6 +520,7 @@ export default function App() {
     setDrag({
       from: 'bench', type: item.type, id: item.id,
       cx: e.clientX, cy: e.clientY,
+      sx: e.clientX, sy: e.clientY,
       ox: e.clientX - r.left,
       oy: e.clientY - r.top,
     });
@@ -597,9 +598,12 @@ export default function App() {
           });
         }
       } else {
-        // Repositioning — always place exactly where dropped, even if offscreen
-        setItems(prev =>
-          prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
+        // Repositioning — only if actually dragged (not just clicked)
+        const moved = Math.abs(e.clientX - drag.sx) > 5 || Math.abs(e.clientY - drag.sy) > 5;
+        if (moved) {
+          setItems(prev =>
+            prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
+        }
       }
     }
     setDrag(null);
@@ -810,8 +814,15 @@ export default function App() {
               <div style={{ position: 'relative', width: s.w, height: imgH }}>
                 <img src={s.src} alt={s.label}
                   style={{ width: s.w, height: imgH, display: 'block' }}
-                  className="drop-shadow-lg cursor-grab active:cursor-grabbing"
-                  draggable={false}
+                  className="drop-shadow-lg"
+                  draggable={false} />
+                {/* Drag hit area — excludes bottom 50px for heater */}
+                <div
+                  style={{
+                    position: 'absolute', top: 0, left: 0, width: s.w,
+                    height: item.type === 'range' ? imgH - 50 : imgH,
+                    cursor: 'grab',
+                  }}
                   onPointerDown={(e) => startBenchDrag(e, item)} />
                 {item.type === 'bulb' && visIntensity > 0.005 && (() => {
                   const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
