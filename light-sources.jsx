@@ -82,7 +82,7 @@ const SLIDER_CFG = {
   tanbulb: {
     peakMin: 700,  peakMax: 1500,
     widthMin: 5,   widthMax: 200,
-    peakDefault: 890, widthDefault: 100, skewDefault: 1.0,
+    peakDefault: 860, widthDefault: 100, skewDefault: 1.0,
   },
   bulb: {
     peakMin: 400,  peakMax: 1200,
@@ -177,25 +177,25 @@ const SOURCES = {
 // divColor: the colour used for the frequency scale segment.
 const BANDS = [
   {
-    id: 'IR',      label: 'IR',     freq: 200,
+    id: 'IR',      label: 'Infrared',    freq: 200,
     divColor: '#c04020',
     btnActive: '#b83010',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(-15deg)',
   },
   {
-    id: 'Visible', label: 'Vis',    freq: 800,
+    id: 'Visible', label: 'Visible',     freq: 800,
     divColor: '#a09050',
     btnActive: '#706840',
     colorFilter: 'sepia(0.15) saturate(1.4) brightness(1.2)',
   },
   {
-    id: 'UV',      label: 'UV',     freq: 3200,
+    id: 'UV',      label: 'Ultraviolet', freq: 3200,
     divColor: '#8030cc',
     btnActive: '#6b1faa',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(262deg)',
   },
   {
-    id: 'XRay',    label: 'X-Ray',  freq: 12000,
+    id: 'XRay',    label: 'X-Ray',       freq: 12000,
     divColor: '#2060a0',
     btnActive: '#1e4a7a',
     colorFilter: 'sepia(1) saturate(5) hue-rotate(195deg) brightness(1.4)',
@@ -298,8 +298,9 @@ function EmissionShape({ item, band, intensity, dev }) {
   const op    = clamp(ic, 0, 1);
 
   if (item.type === 'bulb') {
-    const camR      = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
-    const bulbBlurB = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
+    const camR         = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
+    const filamentR    = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 0.6);
+    const bulbBlurB    = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
     const camBright = 3.5;
     const mY = dev.maskY[item.type];
     return (
@@ -317,7 +318,7 @@ function EmissionShape({ item, band, intensity, dev }) {
           style={{
             position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
             filter: `brightness(${sharp * camBright * 10}) contrast(20) blur(${dev.bulbFilamentBlur}px)`,
-            opacity: Math.min(camR * 1.05, 1), mixBlendMode: 'screen',
+            opacity: Math.min(filamentR * 1.05, 1), mixBlendMode: 'screen',
           }} />
       </div>
     );
@@ -351,7 +352,7 @@ function EmissionShape({ item, band, intensity, dev }) {
 
 // ── Emission graph (floats below bench item) ──────────────────
 const GRAPH_SAMPLES = 120;
-function EmissionGraph({ item, bandRanges, width }) {
+function EmissionGraph({ item, bandRanges, width, devMode }) {
   const H = 53; // 44 × 1.2
   const W = width;
   const Y_MAX = 80;
@@ -379,19 +380,20 @@ function EmissionGraph({ item, bandRanges, width }) {
 
   return (
     <div style={{ width: W, marginTop: -35 }}>
-      {/* Band capture values — above graph, rendered in front of item image */}
-      <div style={{ display: 'flex', width: W, marginBottom: 1, position: 'relative', zIndex: 10 }}>
-        {captures.map(b => (
-          <div key={b.id} style={{ width: b.pct + '%', textAlign: 'center' }}>
-            <span style={{
-              fontSize: 14, fontFamily: 'monospace',
-              color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.4)',
-            }}>
-              {b.val >= 0.005 ? (b.val * Y_MAX).toFixed(1) : '·'}
-            </span>
-          </div>
-        ))}
-      </div>
+      {devMode && (
+        <div style={{ display: 'flex', width: W, marginBottom: 1, position: 'relative', zIndex: 10 }}>
+          {captures.map(b => (
+            <div key={b.id} style={{ width: b.pct + '%', textAlign: 'center' }}>
+              <span style={{
+                fontSize: 14, fontFamily: 'monospace',
+                color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.4)',
+              }}>
+                {b.val >= 0.005 ? (b.val * Y_MAX).toFixed(1) : '·'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
         {/* Band regions */}
         {bandRanges.map(b => {
@@ -441,7 +443,7 @@ function DevSlider({ label, min, max, step, value, onChange, fmt }) {
 export default function App() {
   const [items,        setItems]        = useState([]);
   const [drag,         setDrag]         = useState(null);
-  const [selectedBand, setSelectedBand] = useState('IR');
+  const [selectedBand, setSelectedBand] = useState('Visible');
 
   // Frequency-scale dividers in Hz (log scale).
   // Initialised at geometric midpoints between adjacent band freqs.
@@ -462,7 +464,9 @@ export default function App() {
   const [emojiDrag, setEmojiDrag] = useState(null);
   const [splitPct, setSplitPct] = useState(50);
   const [hDrag, setHDrag] = useState(null);
-  const [camPanY, setCamPanY] = useState(200);
+  const [camPanY, setCamPanY] = useState(100);
+  const [devMode, setDevMode] = useState(false);
+  const [showGraphs, setShowGraphs] = useState(false);
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 39, bulbFilamentBlur: 4,
@@ -610,6 +614,41 @@ export default function App() {
       onPointerMove={onMove}
       onPointerUp={onUp}
     >
+      {/* Dev mode + Show Graphs checkboxes — upper left */}
+      <div style={{
+        position: 'fixed', top: 6, left: 8, zIndex: 100,
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input
+            id="devMode"
+            type="checkbox"
+            checked={devMode}
+            onChange={e => setDevMode(e.target.checked)}
+            style={{ accentColor: '#a855f7', width: 11, height: 11, cursor: 'pointer' }}
+          />
+          <label htmlFor="devMode" style={{
+            fontSize: 9, color: 'black', cursor: 'pointer', userSelect: 'none',
+          }}>
+            Dev Mode
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input
+            id="showGraphs"
+            type="checkbox"
+            checked={showGraphs}
+            onChange={e => setShowGraphs(e.target.checked)}
+            style={{ accentColor: '#22d3ee', width: 22, height: 22, cursor: 'pointer' }}
+          />
+          <label htmlFor="showGraphs" style={{
+            fontSize: 18, color: 'black', cursor: 'pointer', userSelect: 'none',
+          }}>
+            Show Graphs
+          </label>
+        </div>
+      </div>
+
       {/* ══════════════════════════════════════════
           TOP HALF — Lab Bench
       ══════════════════════════════════════════ */}
@@ -677,69 +716,95 @@ export default function App() {
           return (
             <div key={item.id} className="absolute touch-none"
               style={{ left: item.x, top: item.y, width: s.w }}>
-              <div className="absolute" style={{ bottom: '100%', marginBottom: 4, left: panelOff, width: panelW }}>
-                <EmissionGraph item={item} bandRanges={bandRanges} width={panelW} />
-              </div>
+              {showGraphs && (
+                <div className="absolute" style={{ bottom: '100%', marginBottom: 4, left: panelOff, width: panelW }}>
+                  <EmissionGraph item={item} bandRanges={bandRanges} width={panelW} devMode={devMode} />
+                </div>
+              )}
               <div
                 className="absolute rounded-lg px-2 py-2 flex flex-col gap-1.5
                            border border-white/10 backdrop-blur-sm"
                 style={{
-                  top: '100%', marginTop: -6, background: 'rgba(0,0,0,0.65)',
-                  left: panelOff - bgExtend, width: panelW + bgExtend * 2,
+                  top: '100%',
+                  marginTop: item.type === 'range' ? -16 : -6,
+                  background: 'rgba(0,0,0,0.65)',
+                  left: panelOff - bgExtend + (item.type === 'range' ? 20 : 0),
+                  width: panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0),
                 }}
                 onPointerDown={e => e.stopPropagation()}>
-                {/* Amplitude */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Amp</span>
-                  <input type="range" min="0" max="500" value={item.amplitude}
-                    className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
-                  <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
-                </div>
-                {/* Peak — log scale, per-type range */}
-                {(() => {
-                  const cfg  = SLIDER_CFG[item.type];
-                  const conv = makePeakConv(cfg.peakMin, cfg.peakMax);
-                  return (
+                {devMode ? (
+                  <>
+                    {/* Amplitude */}
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
-                      <span className="text-[7px] text-zinc-600 shrink-0">{fmtHz(cfg.peakMin)}</span>
-                      <input type="range" min="0" max="100" value={conv.toSlider(item.peak)}
-                        className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
-                        onChange={e => updateItem(item.id, { peak: conv.fromSlider(+e.target.value) })} />
-                      <span className="text-[7px] text-zinc-500 w-8 text-right tabular-nums shrink-0">
-                        {fmtHz(item.peak)} Hz
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Amp</span>
+                      <input type="range" min="0" max="500" value={item.amplitude}
+                        className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
+                      <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
+                    </div>
+                    {/* Peak — log scale, per-type range */}
+                    {(() => {
+                      const cfg  = SLIDER_CFG[item.type];
+                      const conv = makePeakConv(cfg.peakMin, cfg.peakMax);
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
+                          <span className="text-[7px] text-zinc-600 shrink-0">{fmtHz(cfg.peakMin)}</span>
+                          <input type="range" min="0" max="100" value={conv.toSlider(item.peak)}
+                            className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
+                            onChange={e => updateItem(item.id, { peak: conv.fromSlider(+e.target.value) })} />
+                          <span className="text-[7px] text-zinc-500 w-8 text-right tabular-nums shrink-0">
+                            {fmtHz(item.peak)} Hz
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    {/* Width — direct Hz, per-type range */}
+                    {(() => {
+                      const cfg = SLIDER_CFG[item.type];
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
+                          <span className="text-[7px] text-zinc-600 shrink-0">±{cfg.widthMin}</span>
+                          <input type="range" min={cfg.widthMin} max={cfg.widthMax} value={item.widthHz}
+                            className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
+                            onChange={e => updateItem(item.id, { widthHz: +e.target.value })} />
+                          <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
+                            ±{fmtHz(item.widthHz)} Hz
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    {/* Skew 0.1–5.0 */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Skew</span>
+                      <span className="text-[7px] text-zinc-600 shrink-0">∿</span>
+                      <input type="range" min="10" max="50" value={Math.round(item.skew * 10)}
+                        className="flex-1 cursor-pointer accent-fuchsia-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { skew: +e.target.value / 10 })} />
+                      <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                        {item.skew.toFixed(1)}
                       </span>
                     </div>
-                  );
-                })()}
-                {/* Width — direct Hz, per-type range */}
-                {(() => {
-                  const cfg = SLIDER_CFG[item.type];
-                  return (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
-                      <span className="text-[7px] text-zinc-600 shrink-0">±{cfg.widthMin}</span>
-                      <input type="range" min={cfg.widthMin} max={cfg.widthMax} value={item.widthHz}
-                        className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
-                        onChange={e => updateItem(item.id, { widthHz: +e.target.value })} />
-                      <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
-                        ±{fmtHz(item.widthHz)} Hz
-                      </span>
-                    </div>
-                  );
-                })()}
-                {/* Skew 0.1–5.0 */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Skew</span>
-                  <span className="text-[7px] text-zinc-600 shrink-0">∿</span>
-                  <input type="range" min="10" max="50" value={Math.round(item.skew * 10)}
-                    className="flex-1 cursor-pointer accent-fuchsia-400" style={{ height: '3px' }}
-                    onChange={e => updateItem(item.id, { skew: +e.target.value / 10 })} />
-                  <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
-                    {item.skew.toFixed(1)}
-                  </span>
-                </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Power</span>
+                    <input type="range" min="0" max="500" value={item.amplitude}
+                      className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
+                      onChange={e => {
+                        const v = +e.target.value;
+                        const t = v / 500;
+                        if (item.type === 'range') {
+                          updateItem(item.id, { amplitude: v, peak: Math.round(50 + t * 190) });
+                        } else if (item.type === 'bulb') {
+                          updateItem(item.id, { amplitude: v, peak: Math.round(400 + t * 200) });
+                        } else {
+                          updateItem(item.id, { amplitude: v });
+                        }
+                      }} />
+                  </div>
+                )}
               </div>
               {/* Item image + visible-light glow overlay */}
               <div style={{ position: 'relative', width: s.w, height: imgH }}>
@@ -751,7 +816,7 @@ export default function App() {
                 {item.type === 'bulb' && visIntensity > 0.005 && (() => {
                   const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
                   const bulbR     = Math.pow(visC, 1.8); // gradual at low, steeper toward high
-                  const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type]; // min 10px, max 20px
+                  const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type];
                   const color = 'rgb(255,160,0)';
                   const colorFilter      = `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]})`;
                   const filamentColorFilter = `hue-rotate(${dev.visHue[item.type] - 20}deg) saturate(${dev.visSat[item.type]})`;
@@ -947,16 +1012,10 @@ export default function App() {
 
                   {/* Band label */}
                   <span
-                    className="text-[11px] font-semibold tracking-wide leading-none
+                    className="text-[9px] font-semibold tracking-wide leading-none
                                transition-colors duration-100 z-10 relative w-full text-center"
                     style={{ color: isActive ? '#fff' : b.divColor + 'aa' }}>
                     {b.label}
-                  </span>
-
-                  {/* Hz range */}
-                  <span className="text-[7px] leading-none mt-0.5 tabular-nums"
-                    style={{ color: isActive ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.18)' }}>
-                    {fmtHz(b.lo)}–{fmtHz(b.hi)}
                   </span>
 
                   {/* Draggable divider handle — right edge */}
@@ -983,17 +1042,19 @@ export default function App() {
         </div>
 
         {/* Dev panel */}
-        <div className="absolute bottom-0 left-0 right-0 z-10
-                        flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
-                        bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
-          <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
-          <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
-            value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
-          <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
-            value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
-          <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
-            value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
-        </div>
+        {devMode && (
+          <div className="absolute bottom-0 left-0 right-0 z-10
+                          flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
+                          bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
+            <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
+            <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
+              value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
+            <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
+              value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
+            <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
+              value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
+          </div>
+        )}
       </div>
 
       {/* Global drag ghost */}
