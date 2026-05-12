@@ -142,12 +142,17 @@ function thermalScale(intensity, power, scale) {
 
 // ── Thermal false-colour palette (cold → hot) ─────────────────
 const THERMAL = [
-  { t: 0.05, blur: 80, opacity: 0.45, color: '#0d0018', imgFilter: 'sepia(1) saturate(4) hue-rotate(258deg) brightness(0.30)' },
-  { t: 0.60, blur: 58, opacity: 0.60, color: '#3a0060', imgFilter: 'sepia(1) saturate(7) hue-rotate(268deg) brightness(0.50)' },
-  { t: 1.30, blur: 30, opacity: 0.75, color: '#8800cc', imgFilter: 'sepia(1) saturate(9) hue-rotate(276deg) brightness(0.85)' },
-  { t: 2.20, blur: 18, opacity: 0.88, color: '#ff6600', imgFilter: 'sepia(1) saturate(10) hue-rotate(-42deg) brightness(1.5)' },
-  { t: 3.20, blur: 36, opacity: 0.94, color: '#ffaa00', imgFilter: 'sepia(1) saturate(8) hue-rotate(-50deg) brightness(2.2)' },
-  { t: 4.40, blur: 72, opacity: 1.00, color: '#ffffff', imgFilter: 'brightness(10)' },
+  // cold → purple (keep dim so orange can dominate via screen-blend)
+  { t: 0.05, blur: 80, opacity: 0.38, imgFilter: 'sepia(1) saturate(4) hue-rotate(258deg) brightness(0.22)' },
+  { t: 0.45, blur: 60, opacity: 0.48, imgFilter: 'sepia(1) saturate(7) hue-rotate(268deg) brightness(0.38)' },
+  // orange arrives early — this is the key fix
+  { t: 0.95, blur: 22, opacity: 0.84, imgFilter: 'sepia(1) saturate(12) hue-rotate(-38deg) brightness(1.7)' },
+  // brighter orange
+  { t: 2.10, blur: 38, opacity: 0.94, imgFilter: 'sepia(1) saturate(9)  hue-rotate(-50deg) brightness(2.8)' },
+  // yellow-white bloom — pushed up so orange has room to breathe
+  { t: 4.20, blur: 62, opacity: 0.98, imgFilter: 'sepia(1) saturate(5)  hue-rotate(-55deg) brightness(5.0)' },
+  // peak white
+  { t: 5.40, blur: 80, opacity: 1.00, imgFilter: 'brightness(14)' },
 ];
 
 // ── Source catalogue ─────────────────────────────────────────
@@ -252,7 +257,7 @@ function EmissionShape({ item, band, intensity, dev }) {
     }
 
     if (s.maskSrc) {
-      const glowOp = clamp((therm - 2.6) / 4.0, 0, 1.0);
+      const glowOp = clamp((therm - 1.4) / 4.0, 0, 1.0);
       return (
         <div className="absolute pointer-events-none"
           style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
@@ -432,7 +437,7 @@ function DevSlider({ label, min, max, step, value, onChange, fmt }) {
         className="w-24 cursor-pointer accent-violet-500"
         style={{ height: '3px' }}
         onChange={e => onChange(+e.target.value)} />
-      <span className="text-[9px] text-zinc-400 tabular-nums w-9">
+      <span className="text-[10px] text-zinc-200 tabular-nums font-mono w-12 text-left">
         {fmt ? fmt(value) : value}
       </span>
     </div>
@@ -462,15 +467,27 @@ export default function App() {
     }))
   );
   const [emojiDrag, setEmojiDrag] = useState(null);
-  const [splitPct, setSplitPct] = useState(50);
-  const [hDrag, setHDrag] = useState(null);
-  const [camPanY, setCamPanY] = useState(100);
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
+  const [viewerPos, setViewerPos] = useState({ x: 40, y: 80 });
+  const [viewerDrag, setViewerDrag] = useState(null); // { ox, oy }
+
+  // Viewer layout constants (image is 1024×1024)
+  const VIEWER_W = 630;
+  const VS = VIEWER_W / 1024; // scale factor
+  const SCREEN_L = 78;
+  const SCREEN_T = 60;
+  const SCREEN_W = Math.round(783 * VS);
+  const SCREEN_H = 495;
+  const BENCH_TOP = 30; // bench marginTop in px
+  // 4 circular band buttons — positions fine-tuned to the panel image
+  const BTN_CX  = Math.round(882 * VS) - 13;           // -13 x offset
+  const BTN_R   = Math.round(28  * VS);
+  const BTN_CYS = [196+12, 248-1, 300-4, 353-6];       // per-button y offsets: IR+12 Vis-1 UV-4 XRay-6
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
-    bulbOutsideBlur: 39, bulbFilamentBlur: 4,
-    bulbOutsideMag: 21.5, bulbFilamentMag: 38,
+    bulbOutsideBlur: 22, bulbFilamentBlur: 3,
+    bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
     maskX: { range: -11, tanbulb: -9, bulb: 0 },
     maskY: { range: -25, tanbulb: -5, bulb: 2 },
     benchX: { range: -12, tanbulb: 2, bulb: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0 },
@@ -497,7 +514,6 @@ export default function App() {
 
   const benchRef = useRef(null);
   const partsRef = useRef(null);
-  const scaleRef = useRef(null);
 
   const updateItem = (id, patch) =>
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
@@ -526,17 +542,15 @@ export default function App() {
     });
   };
 
-  const startDivDrag = (e, idx) => {
+  const startDivDrag = (e, idx, barLeft, barWidth) => {
     e.preventDefault();
     e.stopPropagation();
-    const r = scaleRef.current.getBoundingClientRect();
-    setDivDrag({ idx, barLeft: r.left, barWidth: r.width });
+    setDivDrag({ idx, barLeft, barWidth });
   };
 
   const onMove = (e) => {
-    if (hDrag) {
-      const newPct = clamp(hDrag.startPct + (e.clientY - hDrag.startY) / window.innerHeight * 100, 20, 80);
-      setSplitPct(newPct);
+    if (viewerDrag) {
+      setViewerPos({ x: e.clientX - viewerDrag.ox, y: e.clientY - viewerDrag.oy });
       return;
     }
     if (emojiDrag && benchRef.current) {
@@ -566,7 +580,7 @@ export default function App() {
   };
 
   const onUp = (e) => {
-    if (hDrag) { setHDrag(null); return; }
+    if (viewerDrag) { setViewerDrag(null); return; }
     if (emojiDrag) { setEmojiDrag(null); return; }
     if (divDrag) { setDivDrag(null); return; }
     if (!drag) return;
@@ -614,7 +628,7 @@ export default function App() {
   return (
     <div
       className="h-screen w-screen flex flex-col select-none overflow-hidden"
-      style={{ cursor: hDrag ? 'row-resize' : divDrag ? 'col-resize' : undefined }}
+      style={{ cursor: viewerDrag ? 'grabbing' : divDrag ? 'col-resize' : undefined }}
       onPointerMove={onMove}
       onPointerUp={onUp}
     >
@@ -653,10 +667,11 @@ export default function App() {
         </div>
       </div>
 
+
       {/* ══════════════════════════════════════════
           TOP HALF — Lab Bench
       ══════════════════════════════════════════ */}
-      <div className="relative" ref={benchRef} style={{ height: `${splitPct}%`, marginTop: 30 }}>
+      <div className="relative flex-1" ref={benchRef} style={{ marginTop: 30 }}>
         <img src={`images/Table.PNG?v=${Date.now()}`}
           className="absolute left-0 w-full pointer-events-none"
           style={{ height: 'auto', top: -55, width: '100%' }}
@@ -734,6 +749,8 @@ export default function App() {
                   background: 'rgba(0,0,0,0.65)',
                   left: panelOff - bgExtend + (item.type === 'range' ? 20 : 0),
                   width: panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0),
+                  position: 'absolute',
+                  zIndex: 65,
                 }}
                 onPointerDown={e => e.stopPropagation()}>
                 {devMode ? (
@@ -915,157 +932,201 @@ export default function App() {
         ))}
       </div>
 
+      {/* Dev panel — fixed bottom strip */}
+      {devMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-40
+                        flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
+                        bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
+          <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
+          <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
+            value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
+          <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
+            value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
+          <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
+            value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
+        </div>
+      )}
+
       {/* ══════════════════════════════════════════
-          BOTTOM HALF — Camera View
+          VIEWER — draggable camera device
       ══════════════════════════════════════════ */}
-      {/* Draggable horizontal divider */}
       <div
         style={{
-          height: 8, cursor: 'row-resize', flexShrink: 0,
-          background: hDrag ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
-          borderTop: '1px solid rgba(255,255,255,0.12)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          transition: 'background 0.1s',
+          position: 'fixed', left: viewerPos.x, top: viewerPos.y,
+          width: VIEWER_W, height: VIEWER_W,
+          zIndex: 60, touchAction: 'none',
+          cursor: viewerDrag ? 'grabbing' : 'grab',
         }}
         onPointerDown={e => {
-          e.preventDefault();
-          setHDrag({ startY: e.clientY, startPct: splitPct });
+          setViewerDrag({ ox: e.clientX - viewerPos.x, oy: e.clientY - viewerPos.y });
         }}
-      />
+      >
+        {/* Screen — behind the viewer image, visible through its transparent center */}
+        <div
+          style={{
+            position: 'absolute', left: SCREEN_L, top: SCREEN_T,
+            width: SCREEN_W, height: SCREEN_H,
+            overflow: 'hidden', zIndex: 1,
+            background: selectedBand === 'IR' ? '#38006a' : '#000',
+          }}
+        >
+          {/* CRT scanlines */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
+            backgroundImage: 'repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px)',
+            backgroundSize: '100% 3px',
+          }} />
 
-      <div className="relative overflow-hidden"
-        style={{ flex: 1, background: selectedBand === 'IR' ? '#38006a' : '#000' }}>
+          {/* Mode title — inside screen, top center */}
+          {(() => {
+            const titleMap = { IR: 'IR EMISSION', Visible: 'VISIBLE EMISSION', UV: 'UV EMISSION', XRay: 'XRAY EMISSION' };
+            const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
+            return (
+              <div style={{
+                position: 'absolute', top: 35, left: 0, right: 0,
+                display: 'flex', justifyContent: 'center',
+                pointerEvents: 'none', zIndex: 10,
+              }}>
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <span style={{
+                    fontFamily: '"Courier New", Courier, monospace',
+                    fontSize: 26, fontWeight: 'bold', letterSpacing: '0.18em',
+                    color: colorMap[selectedBand],
+                    textShadow: [
+                      `0 0 2px ${colorMap[selectedBand]}`,
+                      `0 0 8px ${colorMap[selectedBand]}dd`,
+                      `0 0 18px ${colorMap[selectedBand]}99`,
+                      `0 0 40px ${colorMap[selectedBand]}55`,
+                    ].join(', '),
+                    userSelect: 'none', display: 'block',
+                    filter: 'brightness(1.3) contrast(1.1)',
+                  }}>
+                    {titleMap[selectedBand]}
+                  </span>
+                  {/* Scanlines over the text */}
+                  <div style={{
+                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                    backgroundImage: 'repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.22) 2px, rgba(0,0,0,0.22) 3px)',
+                    backgroundSize: '100% 3px',
+                  }} />
+                </div>
+              </div>
+            );
+          })()}
 
-        {/* Pan slider */}
-        <div style={{
-          position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)',
-          zIndex: 15, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-          pointerEvents: 'auto',
-        }}>
-          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>▲</span>
-          <div style={{ width: 20, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <input type="range" min={0} max={400} step={1} value={camPanY}
-              onChange={e => setCamPanY(+e.target.value)}
-              style={{ width: 100, height: 16, transform: 'rotate(-90deg)', cursor: 'ns-resize', accentColor: 'rgba(255,255,255,0.45)' }}
-            />
-          </div>
-          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>▼</span>
-          <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 }}>Tilt</span>
-        </div>
-
-        {/* Glow viewport */}
-        {items.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm tracking-wide"
-            style={{ color: selectedBand === 'IR' ? '#7a40a0' : '#3f3f46', paddingTop: 56 }}>
-            Place a light source on the bench.
-          </div>
-        ) : (
-          <>
-            <div className="absolute inset-0 pointer-events-none"
-              style={{
-                backgroundImage: 'repeating-linear-gradient(transparent, transparent 3px, rgba(255,255,255,0.013) 3px, rgba(255,255,255,0.013) 4px)',
-                backgroundSize:  '100% 4px',
-              }} />
-            <div style={{ position: 'absolute', inset: 0, top: -70 + camPanY }}>
+          {items.length === 0 ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '100%', textAlign: 'center', padding: 12,
+              color: selectedBand === 'IR' ? '#7a40a0' : '#3f3f46',
+              fontSize: 10, lineHeight: 1.4,
+            }}>
+              Place a light source on the bench.
+            </div>
+          ) : (
+            /* Content is translated so bench-relative item coords map through the viewer screen */
+            <div style={{
+              position: 'absolute',
+              left: -(viewerPos.x + SCREEN_L),
+              top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
+            }}>
               {items.map(item => {
                 const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
                                 * (item.amplitude / 400);
-                return (
-                  <EmissionShape key={item.id} item={item} band={band} intensity={intensity} dev={dev} />
-                );
+                return <EmissionShape key={item.id} item={item} band={band} intensity={intensity} dev={dev} />;
               })}
-              {/* Emoji occluders — block all emission using the emoji's own silhouette */}
+              {/* Emoji occluders */}
               {emojis.map(em => (
                 <span key={em.id} style={{
                   position: 'absolute', left: em.x, top: em.y,
                   fontSize: 96, lineHeight: 1, display: 'block',
                   filter: 'brightness(0)',
                   opacity: band.id === 'IR' ? 0.5 : 1,
-                  zIndex: 20,
-                  userSelect: 'none', pointerEvents: 'none',
+                  zIndex: 20, userSelect: 'none', pointerEvents: 'none',
                 }}>
                   {em.emoji}
                 </span>
               ))}
             </div>
-          </>
-        )}
-
-        {/* ── Camera band scale + buttons ── */}
-        <div className="absolute left-0 right-0 z-30 border-b border-zinc-800/80 backdrop-blur-sm"
-          style={{ top: 0, background: 'rgba(9,9,11,0.92)' }}>
-
-          {/* "Camera" label row */}
-          <div className="px-4 pt-1.5 pb-0">
-            <span className="text-zinc-600 text-[8px] uppercase tracking-widest">Camera</span>
-          </div>
-
-          {/* Frequency scale — draggable band columns, log Hz axis */}
-          <div ref={scaleRef} className="flex h-11 relative">
-            {bandRanges.map((b, bi) => {
-              const isActive = selectedBand === b.id;
-              return (
-                <div key={b.id}
-                  className="relative flex flex-col items-center justify-center overflow-visible cursor-pointer"
-                  style={{
-                    width: `${b.pct}%`,
-                    background: isActive ? b.divColor + '50' : b.divColor + '1a',
-                    borderRight: bi < 3 ? '1px solid rgba(255,255,255,0.07)' : 'none',
-                    transition: 'background 0.1s',
-                  }}
-                  onClick={() => setSelectedBand(b.id)}>
-
-                  {/* Active indicator strip at top */}
-                  {isActive && (
-                    <div className="absolute top-0 left-0 right-0 h-0.5"
-                      style={{ background: b.divColor }} />
-                  )}
-
-                  {/* Band label */}
-                  <span
-                    className="text-[9px] font-semibold tracking-wide leading-none
-                               transition-colors duration-100 z-10 relative w-full text-center"
-                    style={{ color: isActive ? '#fff' : b.divColor + 'aa' }}>
-                    {b.label}
-                  </span>
-
-                  {/* Draggable divider handle — right edge */}
-                  {bi < 3 && (
-                    <div
-                      className="absolute top-0 bottom-0 z-20 flex items-center justify-center"
-                      style={{ right: -5, width: 10, cursor: 'col-resize' }}
-                      onPointerDown={e => { e.stopPropagation(); startDivDrag(e, bi); }}>
-                      <div
-                        className="rounded-full transition-all duration-100"
-                        style={{
-                          width:   divDrag?.idx === bi ? 3 : 1,
-                          height:  20,
-                          background: divDrag?.idx === bi
-                            ? 'rgba(255,255,255,0.75)'
-                            : 'rgba(255,255,255,0.22)',
-                        }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          )}
         </div>
 
-        {/* Dev panel */}
-        {devMode && (
-          <div className="absolute bottom-0 left-0 right-0 z-10
-                          flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
-                          bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
-            <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
-            <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
-              value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
-            <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
-              value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
-            <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
-              value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
-          </div>
-        )}
+        {/* Device image — on top, transparent center reveals the screen behind */}
+        <img src="images/viewer.png" draggable={false}
+          style={{
+            position: 'absolute', inset: 0,
+            width: VIEWER_W, height: VIEWER_W,
+            userSelect: 'none', pointerEvents: 'none',
+            zIndex: 2,
+          }} />
+
+        {/* Band selector buttons + labels */}
+        {BANDS.map((b, i) => {
+          const isActive = selectedBand === b.id;
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          // Right-justify all labels so their right edge aligns with where "R" in IR sat at 11px
+          // axis_x ≈ BTN_CX - BTN_R - 6  →  right = VIEWER_W - axis_x
+          const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
+          return (
+            <div key={b.id}>
+              {/* Label — right-justified, double size, CRT screen look */}
+              <div style={{
+                position: 'absolute',
+                right: labelRight + 15,
+                width: 90,
+                textAlign: 'right',
+                top:  BTN_CYS[i] - 13,
+                zIndex: 10,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}>
+                <span style={{
+                  fontFamily: '"Courier New", Courier, monospace',
+                  fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+                  color: isActive ? b.divColor : 'rgba(255,255,255,0.28)',
+                  textShadow: isActive ? [
+                    `0 0 2px ${b.divColor}`,
+                    `0 0 8px ${b.divColor}dd`,
+                    `0 0 18px ${b.divColor}88`,
+                    `0 0 35px ${b.divColor}44`,
+                  ].join(', ') : 'none',
+                  transition: 'color 0.12s, text-shadow 0.12s',
+                  filter: isActive ? 'brightness(1.3) contrast(1.1)' : 'none',
+                  display: 'block',
+                }}>
+                  {labelMap[b.id]}
+                </span>
+              </div>
+              {/* Hit area — 2px smaller radius, unearthly glow when active */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: BTN_CX - BTN_R + 2,
+                  top:  BTN_CYS[i] - BTN_R + 2,
+                  width:  BTN_R * 2 - 4,
+                  height: BTN_R * 2 - 4,
+                  borderRadius: '50%',
+                  background: isActive
+                    ? `radial-gradient(circle, #fff9 0%, ${b.divColor}ee 45%, ${b.btnActive} 100%)`
+                    : 'rgba(30,30,30,0.5)',
+                  boxShadow: isActive ? [
+                    `0 0 3px 1px #fff8`,
+                    `0 0 8px 3px ${b.divColor}`,
+                    `0 0 18px 6px ${b.divColor}cc`,
+                    `0 0 36px 10px ${b.divColor}77`,
+                    `0 0 60px 16px ${b.divColor}33`,
+                  ].join(', ') : 'none',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  transition: 'background 0.15s, box-shadow 0.15s',
+                }}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={() => setSelectedBand(b.id)}
+              />
+            </div>
+          );
+        })}
+
       </div>
 
       {/* Global drag ghost */}
