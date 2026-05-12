@@ -84,6 +84,11 @@ const SLIDER_CFG = {
     widthMin: 5,   widthMax: 200,
     peakDefault: 860, widthDefault: 100, skewDefault: 1.0,
   },
+  xray: {
+    peakMin: 5000, peakMax: 20000,
+    widthMin: 200, widthMax: 8000,
+    peakDefault: 10000, widthDefault: 3000, skewDefault: 1.0,
+  },
   bulb: {
     peakMin: 400,  peakMax: 1200,
     widthMin: 5,   widthMax: 300,
@@ -175,6 +180,13 @@ const SOURCES = {
     outsideSrc:  'images/BulbOutside.png',
     filamentSrc: 'images/BulbFilament.png',
     w: 170, natW: 324, natH: 453,
+  },
+  xray: {
+    label: 'X-Ray Emitter',
+    src:          'images/XRayEmitter.png',
+    sourceSrc:    'images/XRaySource.png',
+    reflectorSrc: 'images/XRayReflector.png',
+    w: 200, natW: 878, natH: 1022,
   },
 };
 
@@ -295,7 +307,7 @@ function EmissionShape({ item, band, intensity, dev }) {
     }
   }
 
-  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : intensity);
+  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : band.id === 'XRay' ? intensity * 2 : intensity);
   const sharp = clamp(1 + ic * 4,   1, 5);
   const bloom = clamp(1 + ic * 5,   1, 6);
   const blurD = (2  + ic * 8)  * dev.blurScale;
@@ -325,6 +337,33 @@ function EmissionShape({ item, band, intensity, dev }) {
             filter: `brightness(${sharp * camBright * 10}) contrast(20) blur(${dev.bulbFilamentBlur}px)`,
             opacity: Math.min(filamentR * 1.05, 1), mixBlendMode: 'screen',
           }} />
+      </div>
+    );
+  }
+
+  if (item.type === 'xray') {
+    if (band.id !== 'XRay') return null;
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        {/* XRaySource — full intensity (bloom + sharp) */}
+        <img src={s.sourceSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
+            opacity: op * 0.7, mixBlendMode: 'screen' }} />
+        <img src={s.sourceSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
+            opacity: op, mixBlendMode: 'screen' }} />
+        {/* XRayReflector — 20% of source contribution */}
+        <img src={s.reflectorSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
+            opacity: op * 0.7 * 0.20, mixBlendMode: 'screen' }} />
+        <img src={s.reflectorSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
+            opacity: op * 0.20, mixBlendMode: 'screen' }} />
       </div>
     );
   }
@@ -488,14 +527,14 @@ export default function App() {
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 22, bulbFilamentBlur: 3,
     bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
-    maskX: { range: -11, tanbulb: -9, bulb: 0 },
-    maskY: { range: -25, tanbulb: -5, bulb: 2 },
-    benchX: { range: -12, tanbulb: 2, bulb: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0 },
-    visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0 },
-    visHue:     { range: -8,    tanbulb: -75,   bulb: 0 },
-    visBlur:    { range: 3.0,   tanbulb: 4.0,   bulb: 3.0 },
-    visSat:     { range: 5.0,   tanbulb: 20.0,  bulb: 8.0 },
-    visBright:  { range: 1.0,   tanbulb: 1.0,   bulb: 1.0 } };
+    maskX: { range: -11, tanbulb: -9, bulb: 0, xray: 0 },
+    maskY: { range: -25, tanbulb: -5, bulb: 2, xray: 0 },
+    benchX: { range: -12, tanbulb: 2, bulb: 0, xray: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0, xray: 0 },
+    visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0,  xray: 1.0 },
+    visHue:     { range: -8,    tanbulb: -75,   bulb: 0,    xray: 0 },
+    visBlur:    { range: 3.0,   tanbulb: 4.0,   bulb: 3.0,  xray: 1.0 },
+    visSat:     { range: 5.0,   tanbulb: 20.0,  bulb: 8.0,  xray: 1.0 },
+    visBright:  { range: 1.0,   tanbulb: 1.0,   bulb: 1.0,  xray: 1.0 } };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
