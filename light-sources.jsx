@@ -454,12 +454,20 @@ function EmissionGraph({ item, bandRanges, width, devMode }) {
         })}
         {/* Emission curve */}
         <path d={d} fill="none" stroke="rgba(255,255,255,1)" strokeWidth={1.5} />
-        {/* Peak marker */}
-        {(() => {
-          const px = hzToPos(item.peak) * W;
-          return <line x1={px} y1={0} x2={px} y2={H}
-            stroke="rgba(255,255,255,0.60)" strokeWidth={1} strokeDasharray="2,2" />;
-        })()}
+        {/* Band labels */}
+        {bandRanges.map(b => {
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const x1 = hzToPos(b.lo) * W;
+          const x2 = hzToPos(b.hi) * W;
+          const cx = (x1 + x2) / 2;
+          return (
+            <text key={b.id} x={cx} y={H - 4}
+              textAnchor="middle" fontSize={8} fontFamily="monospace"
+              fill={b.divColor} opacity={0.8} style={{ userSelect: 'none' }}>
+              {labelMap[b.id]}
+            </text>
+          );
+        })}
       </svg>
     </div>
   );
@@ -1018,7 +1026,7 @@ export default function App() {
 
           {/* Mode title — inside screen, top center */}
           {(() => {
-            const titleMap = { IR: 'IR EMISSION', Visible: 'VISIBLE EMISSION', UV: 'UV EMISSION', XRay: 'XRAY EMISSION' };
+            const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
             return (
               <div style={{
