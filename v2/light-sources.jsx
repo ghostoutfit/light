@@ -1,0 +1,1266 @@
+import React, { useState, useRef } from 'react';
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// Perceptual sensitivity curve: zero slope at onset (never jarring), rapid rise, saturates near 1.
+// p > 1 ensures f'(0) = 0; k controls how quickly it climbs.
+const visCurve = v => 1 - Math.exp(-5 * Math.pow(Math.max(0, v), 1.4));
+
+// ── Spectral emission model ───────────────────────────────────
+// Log-normal PDF. peak and bandFreq share the same Hz scale.
+// widthHz: 1-sigma bandwidth in Hz (stored directly — no unit conversion needed)
+// skew   : sigma = skew × ln(1 + widthHz/peak); higher = wider + longer tail
+// Returns shape value [0,1] at a single frequency. Peak brightness is always 1.0.
+// Asymmetric log-normal: skew stretches the LOW-frequency tail (like a blackbody).
+//   skew=1 → symmetric in log-space
+//   skew=5 → very asymmetric, heavy low-freq tail, fast high-freq cutoff
+function spectralEmission(bandFreq, peak, widthHz, skew) {
+  const w = Math.max(widthHz, 0.1);
+  const p = Math.max(peak, 1);
+  // Saturating sigma: w/(p+w) stays in [0,1) regardless of how small peak gets.
+  // Prevents the above-peak tail from blowing into UV when peak << widthHz.
+  const sigmaBase = w / (p + w);
+  if (sigmaBase < 0.001) {
+    return Math.exp(-0.5 * ((bandFreq - p) / w) ** 2);
+  }
+  const lnX  = Math.log(Math.max(bandFreq, 1e-9) / p);
+  // Below peak: widen tail by skew factor; above peak: use base sigma (fast Wien-like cutoff)
+  const sigma = lnX < 0 ? sigmaBase * Math.abs(skew) : sigmaBase;
+  return Math.exp(-0.5 * (lnX / sigma) ** 2);
+}
+
+// Abramowitz & Stegun erf approximation, max error 1.5e-7
+function erf(x) {
+  const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
+  return sign * y;
+}
+
+// Analytical integral of the asymmetric log-normal over [lo, hi] in log-frequency space.
+// Returns fraction of total emission captured in [lo, hi] — always in [0, 1].
+// No sampling artifacts: works correctly even when the curve is narrower than any sample grid.
+function bandIntensity(lo, hi, peak, widthHz, skew) {
+  const w = Math.max(widthHz, 0.1);
+  const p = Math.max(peak, 1);
+  const sigmaBase = w / (p + w);
+  const sigma_lo  = sigmaBase * Math.abs(skew); // below-peak sigma (wide, skewed tail)
+  const sigma_hi  = sigmaBase;                  // above-peak sigma (fast Wien-like cutoff)
+  const sq2 = Math.SQRT2;
+
+  // Log-space coordinates relative to peak (peak → u=0)
+  const a = Math.log(Math.max(lo, 1e-9) / p);
+  const b = Math.log(Math.max(hi, 1e-9) / p);
+
+  // Below-peak contribution: integrate from a to min(b, 0) with sigma_lo
+  let below = 0;
+  if (a < 0 && b > a) {
+    const b0 = Math.min(b, 0);
+    below = sigma_lo * (erf(b0 / (sigma_lo * sq2)) - erf(a / (sigma_lo * sq2)));
+  }
+
+  // Above-peak contribution: integrate from max(a, 0) to b with sigma_hi
+  let above = 0;
+  if (b > 0 && b > a) {
+    const a0 = Math.max(a, 0);
+    above = sigma_hi * (erf(b / (sigma_hi * sq2)) - erf(a0 / (sigma_hi * sq2)));
+  }
+
+  // Return absolute captured emission — wider/more-skewed distributions emit more total light,
+  // just like higher amplitude does. Values proportional to sigma (width-scaled).
+  return below + above;
+}
+
+// ── Per-type slider config ────────────────────────────────────
+// peak: log-scale range in Hz; widthHz: linear range in Hz
+const SLIDER_CFG = {
+  range: {
+    peakMin: 20,  peakMax: 400,
+    widthMin: 5,  widthMax: 300,
+    peakDefault: 250, widthDefault: 200,
+  },
+  tanbulb: {
+    peakMin: 700,  peakMax: 1500,
+    widthMin: 5,   widthMax: 200,
+    peakDefault: 860, widthDefault: 100, skewDefault: 1.0,
+  },
+  xray: {
+    peakMin: 5000, peakMax: 20000,
+    widthMin: 200, widthMax: 8000,
+    peakDefault: 10000, widthDefault: 3000, skewDefault: 1.0,
+  },
+  bulb: {
+    peakMin: 400,  peakMax: 1200,
+    widthMin: 5,   widthMax: 300,
+    peakDefault: 614, widthDefault: 173, skewDefault: 4.2,
+  },
+};
+// Log-scale peak slider helpers (per type)
+const makePeakConv = (min, max) => ({
+  toSlider:   p => Math.round(Math.log(p / min) / Math.log(max / min) * 100),
+  fromSlider: v => Math.round(min * Math.pow(max / min, v / 100)),
+});
+const fmtHz = p => p >= 1000 ? (p / 1000).toFixed(p >= 10000 ? 0 : 1) + 'k' : String(Math.round(p));
+
+// ── Spectral → perceived colour ──────────────────────────────
+// CIE 1931 2° CMFs via Wyman et al. Gaussian fit. nm = wavelength in nm.
+function cieCmf(nm) {
+  function g(mu, s1, s2) {
+    const s = nm < mu ? s1 : s2;
+    return Math.exp(-0.5 * ((nm - mu) / s) ** 2);
+  }
+  return [
+    Math.max(0, 1.056*g(599.8,37.9,31.0) + 0.362*g(442.0,16.0,26.7) - 0.065*g(501.1,20.4,26.2)),
+    Math.max(0, 0.821*g(568.8,46.9,40.5) + 0.286*g(530.9,16.3,31.1)),
+    Math.max(0, 1.217*g(437.0,11.8,36.0) + 0.681*g(459.0,26.0,13.8)),
+  ];
+}
+
+// Integrate emission × CMF across the visible band.
+// Maps the band log-linearly onto 380–700 nm (lo→red, hi→violet).
+// Returns [r, g, b] in linear sRGB, normalised so the brightest channel = 1.
+function spectrumToRgb(item, visBand) {
+  const SAMPLES = 40;
+  const logLo = Math.log(visBand.lo), logSpan = Math.log(visBand.hi / visBand.lo);
+  let X = 0, Y = 0, Z = 0;
+  for (let i = 0; i < SAMPLES; i++) {
+    const t  = (i + 0.5) / SAMPLES;
+    const f  = Math.exp(logLo + t * logSpan);     // log-linear through band
+    const nm = 600 - t * 200;                      // 600 nm (orange-red) at lo, 400 nm (violet) at hi — lo end hits CIE X peak
+    const e  = spectralEmission(f, item.peak, item.widthHz, item.skew);
+    const [cx, cy, cz] = cieCmf(nm);
+    X += e * cx;  Y += e * cy;  Z += e * cz;
+  }
+  // XYZ → linear sRGB (IEC 61966-2-1 matrix)
+  const r = Math.max(0,  3.2406*X - 1.5372*Y - 0.4986*Z);
+  const g = Math.max(0, -0.9689*X + 1.8758*Y + 0.0415*Z);
+  const b = Math.max(0,  0.0557*X - 0.2040*Y + 1.0570*Z);
+  const scale = Math.max(Y, 1e-9);
+  return [Math.min(r/scale, 1), Math.min(g/scale, 1), Math.min(b/scale, 1)];
+}
+
+
+// ── Blackbody / thermal scaling ───────────────────────────────
+function thermalScale(intensity, power, scale) {
+  return Math.pow(Math.max(0, intensity), power) * scale;
+}
+
+// ── Thermal palette — white on black ─────────────────────────
+const THERMAL = [
+  { t: 0.05, blur: 80, opacity: 0.38, imgFilter: 'brightness(0.3)'  },
+  { t: 0.45, blur: 60, opacity: 0.55, imgFilter: 'brightness(0.6)'  },
+  { t: 0.95, blur: 22, opacity: 0.80, imgFilter: 'brightness(1.2)'  },
+  { t: 2.10, blur: 38, opacity: 0.92, imgFilter: 'brightness(2.5)'  },
+  { t: 4.20, blur: 62, opacity: 0.98, imgFilter: 'brightness(6.0)'  },
+  { t: 5.40, blur: 80, opacity: 1.00, imgFilter: 'brightness(14)'   },
+];
+
+// ── Visible palette — multi-layer screen-blend like THERMAL ──
+// visScale = thermalScale(intensity) same formula, thresholds tuned to
+// visible band intensities (bulb peaks ~4.2, heater ~2.1 at full power)
+const VIS_LAYERS = [
+  { t: 0.20, blur: 80, opacity: 0.40, bright: 0.5  },  // faint wide halo
+  { t: 0.60, blur: 55, opacity: 0.55, bright: 1.2  },  // soft glow
+  { t: 1.20, blur: 28, opacity: 0.75, bright: 2.8  },  // mid glow
+  { t: 2.00, blur: 40, opacity: 0.88, bright: 6.0  },  // bright bloom
+  { t: 3.00, blur: 62, opacity: 0.95, bright: 12.0 },  // wide white bloom
+  { t: 4.00, blur: 80, opacity: 1.00, bright: 30.0 },  // white core
+];
+
+// ── Source catalogue ─────────────────────────────────────────
+const SOURCES = {
+  range: {
+    label: 'Electric Range',
+    src:   'images/Heater.png',
+    maskSrc: 'images/HeaterElement.png',
+    w: 330, natW: 732, natH: 560,
+    group: 'hot',
+  },
+  bulb: {
+    label: 'Light Bulb',
+    src:         'images/Bulb.png',
+    outsideSrc:  'images/BulbOutside.png',
+    filamentSrc: 'images/BulbFilament.png',
+    w: 170, natW: 324, natH: 453,
+    group: 'hot',
+  },
+  tanbulb: {
+    label: 'Blacklight',
+    src:   'images/Tanbulb.png',
+    maskSrc: 'images/TanbulbElement.png',
+    w: 357, natW: 737, natH: 409,
+    group: 'specialized',
+  },
+  xray: {
+    label: 'X-Ray Emitter',
+    src:          'images/XRayEmitter.png',
+    sourceSrc:    'images/XRaySource.png',
+    reflectorSrc: 'images/XRayReflector.png',
+    w: 200, natW: 878, natH: 1022,
+    group: 'specialized',
+  },
+};
+
+// ── Camera bands ──────────────────────────────────────────────
+// divColor: the colour used for the frequency scale segment.
+const BANDS = [
+  {
+    id: 'IR',      label: 'Infrared',    freq: 200,
+    divColor: '#c04020',
+    btnActive: '#b83010',
+    colorFilter: 'sepia(1) saturate(8) hue-rotate(-15deg)',
+  },
+  {
+    id: 'Visible', label: 'Visible',     freq: 800,
+    divColor: '#a09050',
+    btnActive: '#706840',
+    colorFilter: 'sepia(0.15) saturate(1.4) brightness(1.2)',
+  },
+  {
+    id: 'UV',      label: 'Ultraviolet', freq: 3200,
+    divColor: '#8030cc',
+    btnActive: '#6b1faa',
+    colorFilter: 'sepia(1) saturate(8) hue-rotate(262deg)',
+  },
+  {
+    id: 'XRay',    label: 'X-Ray',       freq: 12000,
+    divColor: '#2060a0',
+    btnActive: '#1e4a7a',
+    colorFilter: 'sepia(1) saturate(5) hue-rotate(195deg) brightness(1.4)',
+  },
+];
+
+// Frequency axis bounds (shared by peak slider, dividers, and scale bar)
+const FREQ_MIN = 20, FREQ_MAX = 20000;
+// Convert Hz → fractional position on the log scale bar [0,1]
+const hzToPos  = f => Math.log(f / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN);
+// Convert fractional bar position → Hz
+const posToHz  = p => Math.round(FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, p));
+
+let uid = Date.now(); // unique enough across HMR reloads
+
+// ── Emission shape ────────────────────────────────────────────
+function EmissionShape({ item, band, intensity, dev }) {
+  if (intensity < 0.005) return null;
+
+  const s    = SOURCES[item.type];
+  const imgH = s.w * (s.natH / s.natW);
+
+  if (band.id === 'IR') {
+    const therm = thermalScale(intensity, dev.glowPower, dev.glowScale);
+
+    if (item.type === 'bulb') {
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {THERMAL.map((layer, i) => {
+            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return [
+              <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} brightness(${dev.bulbOutsideMag}) blur(${dev.bulbOutsideBlur}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+              <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} brightness(${dev.bulbFilamentMag}) blur(${dev.bulbFilamentBlur}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+            ];
+          })}
+        </div>
+      );
+    }
+
+    if (s.maskSrc) {
+      const glowOp = clamp((therm - 1.4) / 4.0, 0, 1.0);
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {/* Whole-body glow — heater only */}
+          {item.type === 'range' && glowOp > 0 && (
+            <img src={s.src}
+              style={{
+                position: 'absolute',
+                top: dev.glowY, left: dev.glowX,
+                width: s.w, height: imgH,
+                filter: 'brightness(2.0) blur(8px)',
+                opacity: glowOp,
+                mixBlendMode: 'screen',
+              }}
+              draggable={false} />
+          )}
+          {THERMAL.map((layer, i) => {
+            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return (
+              <img key={i} src={s.maskSrc}
+                style={{
+                  position: 'absolute',
+                  top: dev.maskY[item.type], left: dev.maskX[item.type],
+                  width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} blur(${layer.blur * dev.blurScale}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }}
+                draggable={false} />
+            );
+          })}
+        </div>
+      );
+    }
+  }
+
+  // ── Visible band — same multi-layer screen-blend as IR ────────
+  if (band.id === 'Visible') {
+    const visScale = thermalScale(intensity, dev.glowPower, dev.glowScale);
+
+    if (item.type === 'bulb') {
+      const visBlurScale = 0.3;
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {VIS_LAYERS.map((layer, i) => {
+            const fadeIn = clamp((visScale - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return [
+              <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `brightness(${layer.bright}) blur(${layer.blur * visBlurScale}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+              <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
+                  filter: `brightness(${layer.bright * 2}) blur(${layer.blur * visBlurScale * 0.4}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+            ];
+          })}
+        </div>
+      );
+    }
+
+    if (s.maskSrc) {
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {VIS_LAYERS.map((layer, i) => {
+            const fadeIn = clamp((visScale - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return (
+              <img key={i} src={s.maskSrc}
+                style={{
+                  position: 'absolute',
+                  top: dev.maskY[item.type], left: dev.maskX[item.type],
+                  width: s.w, height: imgH,
+                  filter: `brightness(${layer.bright}) blur(${layer.blur * dev.blurScale}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }}
+                draggable={false} />
+            );
+          })}
+        </div>
+      );
+    }
+
+    return null;
+  }
+
+  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : band.id === 'XRay' ? intensity * 2 : intensity);
+  const sharp = clamp(1 + ic * 4, 1, 5);
+  const bloom = clamp(1 + ic * 5, 1, 6);
+  const blurD = (2  + ic * 8)  * dev.blurScale;
+  const blurB = (10 + ic * 40) * dev.blurScale;
+  const op    = clamp(ic, 0, 1);
+
+  if (item.type === 'bulb') {
+    const camR         = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
+    const filamentR    = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 0.6);
+    const bulbBlurB    = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
+    const camBright = 3.5;
+    const mY = dev.maskY[item.type];
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        {/* Outside — wide bloom */}
+        <img src={s.outsideSrc} draggable={false}
+          style={{
+            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+            filter: `brightness(${bloom * camBright * 10}) contrast(20) blur(${bulbBlurB}px)`,
+            opacity: Math.min(camR * 1.05, 1), mixBlendMode: 'screen',
+          }} />
+        {/* Filament — tight core */}
+        <img src={s.filamentSrc} draggable={false}
+          style={{
+            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+            filter: `brightness(${sharp * camBright * 10}) contrast(20) blur(${dev.bulbFilamentBlur}px)`,
+            opacity: Math.min(filamentR * 1.05, 1), mixBlendMode: 'screen',
+          }} />
+      </div>
+    );
+  }
+
+  if (item.type === 'xray') {
+    if (band.id !== 'XRay') return null;
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        {/* XRaySource — full intensity (bloom + sharp) */}
+        <img src={s.sourceSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
+            opacity: op * 0.7, mixBlendMode: 'screen' }} />
+        <img src={s.sourceSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
+            opacity: op, mixBlendMode: 'screen' }} />
+        {/* XRayReflector — 20% of source contribution */}
+        <img src={s.reflectorSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
+            opacity: op * 0.7 * 0.20, mixBlendMode: 'screen' }} />
+        <img src={s.reflectorSrc} draggable={false}
+          style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
+            opacity: op * 0.20, mixBlendMode: 'screen' }} />
+      </div>
+    );
+  }
+
+  if (s.maskSrc) {
+    const mX = dev.maskX[item.type], mY = dev.maskY[item.type];
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        <img src={s.maskSrc}
+          style={{
+            position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
+            opacity: op * 0.7, mixBlendMode: 'screen',
+          }}
+          draggable={false} />
+        <img src={s.maskSrc}
+          style={{
+            position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
+            opacity: op, mixBlendMode: 'screen',
+          }}
+          draggable={false} />
+      </div>
+    );
+  }
+  return null;
+}
+
+
+// ── Emission graph (floats below bench item) ──────────────────
+const GRAPH_SAMPLES = 120;
+function EmissionGraph({ item, bandRanges, width, devMode, selectedBand }) {
+  const H = 53; // 44 × 1.2
+  const W = width;
+  const Y_MAX = 80;
+  const PAD = 4;
+
+  // Per-band capture value
+  const captures = bandRanges.map(b => ({
+    ...b,
+    val: bandIntensity(b.lo, b.hi, item.peak, item.widthHz, item.skew) * (item.amplitude / 400),
+  }));
+
+  // CEIL sets full-scale: amplitude=400 peaks at (1/CEIL)^PWR of graph height,
+  // giving the power curve room to work rather than always slamming the top.
+  const CEIL = 1.25, PWR = 1 / 1.25;
+  const pts = [];
+  for (let i = 0; i <= GRAPH_SAMPLES; i++) {
+    const t = i / GRAPH_SAMPLES;
+    const f = FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, t);
+    const v = spectralEmission(f, item.peak, item.widthHz, item.skew) * (item.amplitude / 400);
+    const vScaled = Math.pow(Math.min(v / CEIL, 1), PWR);
+    const y = H - PAD - vScaled * (H - PAD * 2);
+    pts.push([t * W, Math.max(PAD, y)]);
+  }
+  const d = 'M' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+
+  return (
+    <div style={{ width: W, marginTop: -35 }}>
+      {devMode && (
+        <div style={{ display: 'flex', width: W, marginBottom: 1, position: 'relative', zIndex: 10 }}>
+          {captures.map(b => (
+            <div key={b.id} style={{ width: b.pct + '%', textAlign: 'center' }}>
+              <span style={{
+                fontSize: 14, fontFamily: 'monospace',
+                color: b.val > 0.005 ? b.divColor : 'rgba(255,255,255,0.4)',
+              }}>
+                {b.val >= 0.005 ? (b.val * Y_MAX).toFixed(1) : '·'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+        {/* Band regions */}
+        {bandRanges.map(b => {
+          const x1 = hzToPos(b.lo) * W;
+          const x2 = hzToPos(b.hi) * W;
+          const isSelected = selectedBand && b.id === selectedBand;
+          return <rect key={b.id} x={x1} y={0} width={x2 - x1} height={H}
+            fill={b.divColor} opacity={isSelected ? 0.65 : 0.22} />;
+        })}
+        {/* Selected band highlight border */}
+        {selectedBand && bandRanges.filter(b => b.id === selectedBand).map(b => {
+          const x1 = hzToPos(b.lo) * W;
+          const x2 = hzToPos(b.hi) * W;
+          return <rect key="sel" x={x1} y={0} width={x2 - x1} height={H}
+            fill="none" stroke={b.divColor} strokeWidth={1.5} opacity={0.9} />;
+        })}
+        {/* Band divider lines */}
+        {bandRanges.slice(0, -1).map(b => {
+          const x = hzToPos(b.hi) * W;
+          return <line key={b.id} x1={x} y1={0} x2={x} y2={H}
+            stroke="rgba(255,255,255,0.30)" strokeWidth={1} />;
+        })}
+        {/* Emission curve */}
+        <path d={d} fill="none" stroke="rgba(255,255,255,1)" strokeWidth={1.5} />
+        {/* Band labels */}
+        {bandRanges.map(b => {
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const x1 = hzToPos(b.lo) * W;
+          const x2 = hzToPos(b.hi) * W;
+          const cx = (x1 + x2) / 2;
+          return (
+            <text key={b.id} x={cx} y={H / 2}
+              textAnchor="middle" dominantBaseline="middle" fontSize={12} fontFamily="monospace"
+              fill={b.divColor} opacity={0.9} style={{ userSelect: 'none' }}>
+              {labelMap[b.id]}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── Dev slider ────────────────────────────────────────────────
+function DevSlider({ label, min, max, step, value, onChange, fmt }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[8px] text-zinc-500 uppercase tracking-wider shrink-0 w-[72px] text-right">
+        {label}
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value}
+        className="w-24 cursor-pointer accent-violet-500"
+        style={{ height: '3px' }}
+        onChange={e => onChange(+e.target.value)} />
+      <span className="text-[10px] text-zinc-200 tabular-nums font-mono w-12 text-left">
+        {fmt ? fmt(value) : value}
+      </span>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────
+export default function App() {
+  const [items,        setItems]        = useState([]);
+  const [drag,         setDrag]         = useState(null);
+  const [selectedBand, setSelectedBand] = useState('Visible');
+
+  // Frequency-scale dividers in Hz (log scale).
+  // Initialised at geometric midpoints between adjacent band freqs.
+  const [dividers, setDividers] = useState([400, 800, 5000]);
+  const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
+
+  // Dev tuning
+  const [devBlurScale,        setDevBlurScale]        = useState(0.08);
+  const [devBulbVisBright,    setDevBulbVisBright]    = useState(20.0);
+  const [devBulbCamMax,       setDevBulbCamMax]       = useState(0.6);
+  const [devMode, setDevMode] = useState(false);
+  const [showGraphs, setShowGraphs] = useState(false);
+  const [viewerPos, setViewerPos] = useState({ x: 40, y: 80 });
+  const [viewerDrag, setViewerDrag] = useState(null); // { ox, oy }
+  const [showDetector, setShowDetector] = useState(false);
+
+  // Viewer layout constants (image is 1024×1024)
+  const VIEWER_W = 630;
+  const VS = VIEWER_W / 1024; // scale factor
+  const SCREEN_L = 78;
+  const SCREEN_T = 60;
+  const SCREEN_W = Math.round(783 * VS);
+  const SCREEN_H = 495;
+  const BENCH_TOP = 30; // bench marginTop in px
+  // 4 circular band buttons — positions fine-tuned to the panel image
+  const BTN_CX  = Math.round(882 * VS) - 13;           // -13 x offset
+  const BTN_R   = Math.round(28  * VS);
+  const BTN_CYS = [196+12, 248-1, 300-4, 353-6];       // per-button y offsets: IR+12 Vis-1 UV-4 XRay-6
+  const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
+    bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
+    bulbOutsideBlur: 22, bulbFilamentBlur: 3,
+    bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
+    maskX: { range: -11, tanbulb: -9, bulb: 0, xray: 0 },
+    maskY: { range: -25, tanbulb: -5, bulb: 2, xray: 0 },
+    benchX: { range: -12, tanbulb: 2, bulb: 0, xray: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0, xray: 0 },
+    visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0,  xray: 1.0 },
+    visHue:     { range: -8,    tanbulb: -75,   bulb: 0,    xray: 0 },
+    visBlur:    { range: 3.0,   tanbulb: 4.0,   bulb: 3.0,  xray: 1.0 },
+    visSat:     { range: 5.0,   tanbulb: 20.0,  bulb: 8.0,  xray: 1.0 },
+    visBright:  { range: 1.0,   tanbulb: 1.0,   bulb: 1.0,  xray: 1.0 } };
+
+  // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
+  // pct = visual width % on the log-scale bar.
+  const bandRanges = [
+    { ...BANDS[0], lo: FREQ_MIN,    hi: dividers[0] },
+    { ...BANDS[1], lo: dividers[0], hi: dividers[1] },
+    { ...BANDS[2], lo: dividers[1], hi: dividers[2] },
+    { ...BANDS[3], lo: dividers[2], hi: FREQ_MAX    },
+  ].map(b => ({
+    ...b,
+    freq: Math.round(Math.sqrt(b.lo * b.hi)),           // geometric mean
+    pct:  (hzToPos(b.hi) - hzToPos(b.lo)) * 100,       // visual width %
+  }));
+
+  const band = bandRanges.find(b => b.id === selectedBand);
+
+  const benchRef = useRef(null);
+  const partsRef = useRef(null);
+
+  const updateItem = (id, patch) =>
+    setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+
+  const startPartsDrag = (e, type) => {
+    e.preventDefault();
+    const s = SOURCES[type];
+    setDrag({
+      from: 'parts', type, id: null,
+      cx: e.clientX, cy: e.clientY,
+      ox: s.w / 2,
+      oy: s.w * (s.natH / s.natW) * 0.38,
+    });
+  };
+
+  const startBenchDrag = (e, item) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setDrag({
+      from: 'bench', type: item.type, id: item.id,
+      cx: e.clientX, cy: e.clientY,
+      sx: e.clientX, sy: e.clientY,
+      ox: e.clientX - r.left,
+      oy: e.clientY - r.top,
+    });
+  };
+
+  const startDivDrag = (e, idx, barLeft, barWidth) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDivDrag({ idx, barLeft, barWidth });
+  };
+
+  const onMove = (e) => {
+    if (viewerDrag) {
+      setViewerPos({ x: e.clientX - viewerDrag.ox, y: e.clientY - viewerDrag.oy });
+      return;
+    }
+    if (divDrag) {
+      const { idx, barLeft, barWidth } = divDrag;
+      const pos = clamp((e.clientX - barLeft) / barWidth, 0, 1);
+      const hz  = posToHz(pos);
+      setDividers(prev => {
+        const next = [...prev];
+        // Keep at least 1 octave (factor 2) between adjacent dividers/edges
+        const lo = idx === 0 ? FREQ_MIN * 2   : prev[idx - 1] * 2;
+        const hi = idx === 2 ? FREQ_MAX / 2   : prev[idx + 1] / 2;
+        next[idx] = clamp(hz, lo, hi);
+        return next;
+      });
+      return;
+    }
+    if (drag) setDrag(d => ({ ...d, cx: e.clientX, cy: e.clientY }));
+  };
+
+  const onUp = (e) => {
+    if (viewerDrag) { setViewerDrag(null); return; }
+    if (divDrag) { setDivDrag(null); return; }
+    if (!drag) return;
+    if (drag.from === 'bench' && partsRef.current) {
+      const pr = partsRef.current.getBoundingClientRect();
+      if (e.clientX >= pr.left && e.clientX <= pr.right &&
+          e.clientY >= pr.top  && e.clientY <= pr.bottom) {
+        setItems(prev => prev.filter(it => it.id !== drag.id));
+        setDrag(null);
+        return;
+      }
+    }
+    if (benchRef.current) {
+      const br = benchRef.current.getBoundingClientRect();
+      const x = e.clientX - br.left - drag.ox;
+      const y = e.clientY - br.top  - drag.oy;
+      if (drag.from === 'parts') {
+        // New drop — only accept if pointer lands inside bench
+        if (e.clientX >= br.left && e.clientX <= br.right &&
+            e.clientY >= br.top  && e.clientY <= br.bottom) {
+          setItems(prev => {
+            if (prev.some(it => it.type === drag.type)) return prev;
+            return [...prev, {
+              id: uid++, type: drag.type, x, y,
+              amplitude: 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
+              peak: SLIDER_CFG[drag.type].peakDefault,
+              widthHz: SLIDER_CFG[drag.type].widthDefault,
+            }];
+          });
+        }
+      } else {
+        // Repositioning — only if actually dragged (not just clicked)
+        const moved = Math.abs(e.clientX - drag.sx) > 5 || Math.abs(e.clientY - drag.sy) > 5;
+        if (moved) {
+          setItems(prev =>
+            prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
+        }
+      }
+    }
+    setDrag(null);
+  };
+
+  const benchDragging = drag?.from === 'bench';
+
+  return (
+    <div
+      className="h-screen w-screen flex flex-col select-none overflow-hidden"
+      style={{ cursor: viewerDrag ? 'grabbing' : divDrag ? 'col-resize' : undefined }}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+    >
+      {/* Dev mode + Show Graphs checkboxes — upper left */}
+      <div style={{
+        position: 'fixed', top: 6, left: 8, zIndex: 100,
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input
+            id="devMode"
+            type="checkbox"
+            checked={devMode}
+            onChange={e => setDevMode(e.target.checked)}
+            style={{ accentColor: '#a855f7', width: 11, height: 11, cursor: 'pointer' }}
+          />
+          <label htmlFor="devMode" style={{
+            fontSize: 9, color: 'black', cursor: 'pointer', userSelect: 'none',
+          }}>
+            Dev Mode
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input
+            id="showGraphs"
+            type="checkbox"
+            checked={showGraphs}
+            onChange={e => setShowGraphs(e.target.checked)}
+            style={{ accentColor: '#22d3ee', width: 22, height: 22, cursor: 'pointer' }}
+          />
+          <label htmlFor="showGraphs" style={{
+            fontSize: 18, color: 'black', cursor: 'pointer', userSelect: 'none',
+          }}>
+            Show Graphs
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input
+            id="showDetector"
+            type="checkbox"
+            checked={showDetector}
+            onChange={e => setShowDetector(e.target.checked)}
+            style={{ accentColor: '#22d3ee', width: 22, height: 22, cursor: 'pointer' }}
+          />
+          <label htmlFor="showDetector" style={{
+            fontSize: 18, color: 'black', cursor: 'pointer', userSelect: 'none',
+          }}>
+            Show Detector
+          </label>
+        </div>
+      </div>
+
+
+      {/* ══════════════════════════════════════════
+          TOP HALF — Lab Bench
+      ══════════════════════════════════════════ */}
+      <div className="relative flex-1" ref={benchRef} style={{ marginTop: 30 }}>
+        <img src={`images/Table.PNG?v=${Date.now()}`}
+          className="absolute left-0 w-full pointer-events-none"
+          style={{ height: 'auto', top: -55, width: '100%' }}
+          draggable={false} />
+
+        {/* Parts box */}
+        <div ref={partsRef}
+          className="absolute top-4 left-4 z-20 shadow-xl backdrop-blur-sm
+                     rounded-2xl px-3 pt-2 pb-3 flex flex-col gap-2
+                     border transition-colors duration-150"
+          style={{
+            background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)',
+            borderColor: benchDragging ? 'rgba(255,90,60,0.5)' : 'rgba(255,255,255,0.18)',
+          }}>
+          {/* Hot Sources */}
+          <p className="text-orange-400/70 text-[9px] font-bold uppercase tracking-[0.15em] text-center">
+            Hot Sources
+          </p>
+          {Object.entries(SOURCES).filter(([, s]) => s.group === 'hot').map(([type, s]) => (
+            <div key={type}
+              className="flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
+              onPointerDown={(e) => startPartsDrag(e, type)}>
+              <img src={s.src} alt={s.label} style={{ width: 66 }}
+                className="drop-shadow pointer-events-none" draggable={false} />
+              <span className="text-white/40 text-[8px] leading-tight text-center">
+                {s.label}
+              </span>
+            </div>
+          ))}
+          {/* Divider */}
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.10)', margin: '2px 0' }} />
+          {/* Specialized Sources */}
+          <p className="text-blue-400/70 text-[9px] font-bold uppercase tracking-[0.15em] text-center">
+            Specialized
+          </p>
+          {Object.entries(SOURCES).filter(([, s]) => s.group === 'specialized').map(([type, s]) => (
+            <div key={type}
+              className="flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
+              onPointerDown={(e) => startPartsDrag(e, type)}>
+              <img src={s.src} alt={s.label} style={{ width: 66 }}
+                className="drop-shadow pointer-events-none" draggable={false} />
+              <span className="text-white/40 text-[8px] leading-tight text-center">
+                {s.label}
+              </span>
+            </div>
+          ))}
+          <p className="text-white/20 text-[7px] text-center mt-0.5">drag back to remove</p>
+        </div>
+
+        {/* Bench items — sliders above */}
+        {items.map(item => {
+          if (drag?.from === 'bench' && drag.id === item.id) return null;
+          const s    = SOURCES[item.type];
+          const imgH = s.w * (s.natH / s.natW);
+
+          // Visible-band intensity for the real-life glow overlay
+          const visBand       = bandRanges.find(b => b.id === 'Visible');
+          const visIntensity  = bandIntensity(visBand.lo, visBand.hi, item.peak, item.widthHz, item.skew)
+                                * (item.amplitude / 400);
+          const visC     = visCurve(visIntensity * 2);
+          const visBloom = clamp(1 + visC * 5,   1, 6);
+          const visSharp = clamp(1 + visC * 4,   1, 5);
+          const visBlurB = (10 + visC * 40) * dev.blurScale * dev.visBlur[item.type];
+          const visBlurD = (2  + visC * 8)  * dev.blurScale * dev.visBlur[item.type];
+          const visOp    = clamp(visC * dev.visOpacity[item.type], 0, 1);
+
+          const gamma = x => x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+          const [gr, gg, gb] = spectrumToRgb(item, visBand);
+          const glowColor = item.type === 'range'
+            ? 'rgb(255,40,0)'
+            : item.type === 'bulb'
+            ? 'rgb(255,160,0)'
+            : `rgb(${Math.round(gamma(gr)*255)},${Math.round(gamma(gg)*255)},${Math.round(gamma(gb)*255)})`;
+
+          const panelW   = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
+          const bgExtend = item.type === 'bulb' ? 35 : 0;
+          const panelOff = Math.round((s.w - panelW) / 2);
+
+          return (
+            <div key={item.id} className="absolute touch-none"
+              style={{ left: item.x, top: item.y, width: s.w }}>
+              <div
+                className="absolute rounded-lg px-2 py-2 flex flex-col gap-1.5
+                           border border-white/10 backdrop-blur-sm"
+                style={{
+                  top: '100%',
+                  marginTop: item.type === 'range' ? -16 : -6,
+                  background: 'rgba(0,0,0,0.65)',
+                  left: panelOff - bgExtend + (item.type === 'range' ? 20 : 0),
+                  width: panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0),
+                  position: 'absolute',
+                  zIndex: 65,
+                }}
+                onPointerDown={e => e.stopPropagation()}>
+                {devMode ? (
+                  <>
+                    {/* Amplitude */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Amp</span>
+                      <input type="range" min="0" max="500" value={item.amplitude}
+                        className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
+                      <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
+                    </div>
+                    {/* Peak — log scale, per-type range */}
+                    {(() => {
+                      const cfg  = SLIDER_CFG[item.type];
+                      const conv = makePeakConv(cfg.peakMin, cfg.peakMax);
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Peak</span>
+                          <span className="text-[7px] text-zinc-600 shrink-0">{fmtHz(cfg.peakMin)}</span>
+                          <input type="range" min="0" max="100" value={conv.toSlider(item.peak)}
+                            className="flex-1 cursor-pointer accent-sky-400" style={{ height: '3px' }}
+                            onChange={e => updateItem(item.id, { peak: conv.fromSlider(+e.target.value) })} />
+                          <span className="text-[7px] text-zinc-500 w-8 text-right tabular-nums shrink-0">
+                            {fmtHz(item.peak)} Hz
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    {/* Width — direct Hz, per-type range */}
+                    {(() => {
+                      const cfg = SLIDER_CFG[item.type];
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Width</span>
+                          <span className="text-[7px] text-zinc-600 shrink-0">±{cfg.widthMin}</span>
+                          <input type="range" min={cfg.widthMin} max={cfg.widthMax} value={item.widthHz}
+                            className="flex-1 cursor-pointer accent-emerald-400" style={{ height: '3px' }}
+                            onChange={e => updateItem(item.id, { widthHz: +e.target.value })} />
+                          <span className="text-[7px] text-zinc-500 w-10 text-right tabular-nums shrink-0">
+                            ±{fmtHz(item.widthHz)} Hz
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    {/* Skew 0.1–5.0 */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Skew</span>
+                      <span className="text-[7px] text-zinc-600 shrink-0">∿</span>
+                      <input type="range" min="10" max="50" value={Math.round(item.skew * 10)}
+                        className="flex-1 cursor-pointer accent-fuchsia-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { skew: +e.target.value / 10 })} />
+                      <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                        {item.skew.toFixed(1)}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Power</span>
+                    <input type="range" min="0" max="500" value={item.amplitude}
+                      className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
+                      onChange={e => {
+                        const v = +e.target.value;
+                        const t = v / 500;
+                        if (item.type === 'range') {
+                          updateItem(item.id, { amplitude: v, peak: Math.round(50 + t * 190) });
+                        } else if (item.type === 'bulb') {
+                          updateItem(item.id, { amplitude: v, peak: Math.round(400 + t * 200) });
+                        } else {
+                          updateItem(item.id, { amplitude: v });
+                        }
+                      }} />
+                  </div>
+                )}
+              </div>
+              {/* Item image + visible-light glow overlay */}
+              <div style={{ position: 'relative', width: s.w, height: imgH }}>
+                <img src={s.src} alt={s.label}
+                  style={{ width: s.w, height: imgH, display: 'block' }}
+                  className="drop-shadow-lg"
+                  draggable={false} />
+                {/* Drag hit area — excludes bottom 50px for heater */}
+                <div
+                  style={{
+                    position: 'absolute', top: 0, left: 0, width: s.w,
+                    height: item.type === 'range' ? imgH - 50 : imgH,
+                    cursor: 'grab',
+                  }}
+                  onPointerDown={(e) => startBenchDrag(e, item)} />
+                {item.type === 'bulb' && visIntensity > 0.005 && (() => {
+                  const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
+                  const bulbR     = Math.pow(visC, 1.8); // gradual at low, steeper toward high
+                  const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type];
+                  const color = 'rgb(255,160,0)';
+                  const colorFilter      = `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]})`;
+                  const filamentColorFilter = `hue-rotate(${dev.visHue[item.type] - 20}deg) saturate(${dev.visSat[item.type]})`;
+                  return (
+                    <>
+                      {/* Outside — wide bloom */}
+                      <div style={{
+                        position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
+                        filter: `blur(${bulbBlurB}px) brightness(${dev.bulbVisBright})`,
+                        opacity: bulbR * 0.95, mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
+                      }}>
+                        <img src={s.outsideSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: colorFilter }} />
+                      </div>
+                      {/* Filament — tight core */}
+                      <div style={{
+                        position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
+                        filter: `blur(${visBlurD}px) brightness(${dev.bulbVisBright * 0.5})`,
+                        opacity: clamp(visOp * dev.bulbVisBright / 2, 0, 1), mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
+                      }}>
+                        <img src={s.filamentSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: filamentColorFilter }} />
+                      </div>
+                    </>
+                  );
+                })()}
+                {s.maskSrc && visIntensity > 0.005 && (
+                  <>
+                    {/* Bloom — wide soft layer */}
+                    <div style={{
+                      position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+                      width: s.w, height: imgH,
+                      filter: `blur(${visBlurB}px)`,
+                      opacity: visOp * 0.7, mixBlendMode: 'screen',
+                      isolation: 'isolate', pointerEvents: 'none',
+                      backgroundColor: 'black',
+                    }}>
+                      <img src={s.maskSrc} draggable={false}
+                        style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
+                      <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
+                        filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
+                    </div>
+                    {/* Sharp — tight core */}
+                    <div style={{
+                      position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+                      width: s.w, height: imgH,
+                      filter: `blur(${visBlurD}px)`,
+                      opacity: visOp, mixBlendMode: 'screen',
+                      isolation: 'isolate', pointerEvents: 'none',
+                      backgroundColor: 'black',
+                    }}>
+                      <img src={s.maskSrc} draggable={false}
+                        style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
+                      <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
+                        filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+      </div>
+
+      {/* Dev panel — fixed bottom strip */}
+      {devMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-40
+                        flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
+                        bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
+          <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
+          <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
+            value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
+          <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
+            value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
+          <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
+            value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          VIEWER — draggable camera device
+      ══════════════════════════════════════════ */}
+      {showDetector && <div
+        style={{
+          position: 'fixed', left: viewerPos.x, top: viewerPos.y,
+          width: VIEWER_W, height: VIEWER_W,
+          zIndex: 60, touchAction: 'none',
+          cursor: viewerDrag ? 'grabbing' : 'grab',
+        }}
+        onPointerDown={e => {
+          setViewerDrag({ ox: e.clientX - viewerPos.x, oy: e.clientY - viewerPos.y });
+        }}
+      >
+        {/* Screen — behind the viewer image, visible through its transparent center */}
+        <div
+          style={{
+            position: 'absolute', left: SCREEN_L, top: SCREEN_T,
+            width: SCREEN_W, height: SCREEN_H,
+            overflow: 'hidden', zIndex: 1,
+            background: '#000',
+          }}
+        >
+          {/* CRT scanlines */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
+            backgroundImage: 'repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px)',
+            backgroundSize: '100% 3px',
+          }} />
+
+          {/* Mode title — inside screen, top center */}
+          {(() => {
+            const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
+            const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
+            return (
+              <div style={{
+                position: 'absolute', top: 35, left: 0, right: 0,
+                display: 'flex', justifyContent: 'center',
+                pointerEvents: 'none', zIndex: 10,
+              }}>
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <span style={{
+                    fontFamily: '"Courier New", Courier, monospace',
+                    fontSize: 26, fontWeight: 'bold', letterSpacing: '0.18em',
+                    color: colorMap[selectedBand],
+                    textShadow: [
+                      `0 0 2px ${colorMap[selectedBand]}`,
+                      `0 0 8px ${colorMap[selectedBand]}dd`,
+                      `0 0 18px ${colorMap[selectedBand]}99`,
+                      `0 0 40px ${colorMap[selectedBand]}55`,
+                    ].join(', '),
+                    userSelect: 'none', display: 'block',
+                    filter: 'brightness(1.3) contrast(1.1)',
+                  }}>
+                    {titleMap[selectedBand]}
+                  </span>
+                  {/* Scanlines over the text */}
+                  <div style={{
+                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                    backgroundImage: 'repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.22) 2px, rgba(0,0,0,0.22) 3px)',
+                    backgroundSize: '100% 3px',
+                  }} />
+                </div>
+              </div>
+            );
+          })()}
+
+          {items.length === 0 ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '100%', textAlign: 'center', padding: 12,
+              color: '#3f3f46',
+              fontSize: 10, lineHeight: 1.4,
+            }}>
+              Place a light source on the bench.
+            </div>
+          ) : (
+            /* Content is translated so bench-relative item coords map through the viewer screen */
+            <div style={{
+              position: 'absolute',
+              left: -(viewerPos.x + SCREEN_L),
+              top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
+            }}>
+              {items.map(item => {
+                const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
+                                * (item.amplitude / 400);
+                const s = SOURCES[item.type];
+                const panelW = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
+                const panelOff = Math.round((s.w - panelW) / 2);
+                return (
+                  <React.Fragment key={item.id}>
+                    <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
+                    {showGraphs && (
+                      <div style={{
+                        position: 'absolute',
+                        left: item.x + panelOff,
+                        top: item.y - 20,
+                        width: panelW,
+                        pointerEvents: 'none',
+                        zIndex: 20,
+                      }}>
+                        <EmissionGraph item={item} bandRanges={bandRanges} width={panelW}
+                          devMode={devMode} selectedBand={selectedBand} />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Device image — on top, transparent center reveals the screen behind */}
+        <img src="images/viewer.png" draggable={false}
+          style={{
+            position: 'absolute', inset: 0,
+            width: VIEWER_W, height: VIEWER_W,
+            userSelect: 'none', pointerEvents: 'none',
+            zIndex: 2,
+          }} />
+
+        {/* Band selector buttons + labels */}
+        {BANDS.map((b, i) => {
+          const isActive = selectedBand === b.id;
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          // Right-justify all labels so their right edge aligns with where "R" in IR sat at 11px
+          // axis_x ≈ BTN_CX - BTN_R - 6  →  right = VIEWER_W - axis_x
+          const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
+          return (
+            <div key={b.id}>
+              {/* Label — right-justified, double size, CRT screen look */}
+              <div style={{
+                position: 'absolute',
+                right: labelRight + 15,
+                width: 90,
+                textAlign: 'right',
+                top:  BTN_CYS[i] - 13,
+                zIndex: 10,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}>
+                <span style={{
+                  fontFamily: '"Courier New", Courier, monospace',
+                  fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+                  color: isActive ? b.divColor : 'rgba(255,255,255,0.28)',
+                  textShadow: isActive ? [
+                    `0 0 2px ${b.divColor}`,
+                    `0 0 8px ${b.divColor}dd`,
+                    `0 0 18px ${b.divColor}88`,
+                    `0 0 35px ${b.divColor}44`,
+                  ].join(', ') : 'none',
+                  transition: 'color 0.12s, text-shadow 0.12s',
+                  filter: isActive ? 'brightness(1.3) contrast(1.1)' : 'none',
+                  display: 'block',
+                }}>
+                  {labelMap[b.id]}
+                </span>
+              </div>
+              {/* Hit area — 2px smaller radius, unearthly glow when active */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: BTN_CX - BTN_R + 2,
+                  top:  BTN_CYS[i] - BTN_R + 2,
+                  width:  BTN_R * 2 - 4,
+                  height: BTN_R * 2 - 4,
+                  borderRadius: '50%',
+                  background: isActive
+                    ? `radial-gradient(circle, #fff9 0%, ${b.divColor}ee 45%, ${b.btnActive} 100%)`
+                    : 'rgba(30,30,30,0.5)',
+                  boxShadow: isActive ? [
+                    `0 0 3px 1px #fff8`,
+                    `0 0 8px 3px ${b.divColor}`,
+                    `0 0 18px 6px ${b.divColor}cc`,
+                    `0 0 36px 10px ${b.divColor}77`,
+                    `0 0 60px 16px ${b.divColor}33`,
+                  ].join(', ') : 'none',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  transition: 'background 0.15s, box-shadow 0.15s',
+                }}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={() => setSelectedBand(b.id)}
+              />
+            </div>
+          );
+        })}
+
+      </div>}
+
+      {/* Global drag ghost */}
+      {drag && (
+        <div className="fixed pointer-events-none z-50"
+          style={{ left: drag.cx - drag.ox, top: drag.cy - drag.oy, width: SOURCES[drag.type].w }}>
+          <img src={SOURCES[drag.type].src} style={{ width: SOURCES[drag.type].w }}
+            className="opacity-90" draggable={false} />
+        </div>
+      )}
+    </div>
+  );
+}
