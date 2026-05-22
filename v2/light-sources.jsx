@@ -82,7 +82,17 @@ const SLIDER_CFG = {
   tanbulb: {
     peakMin: 700,  peakMax: 1500,
     widthMin: 5,   widthMax: 200,
-    peakDefault: 860, widthDefault: 100, skewDefault: 1.0,
+    peakDefault: 800, widthDefault: 100, skewDefault: 1.0,
+  },
+  gel: {
+    peakMin: 700,  peakMax: 1500,
+    widthMin: 5,   widthMax: 200,
+    peakDefault: 800, widthDefault: 80, skewDefault: 1.0,
+  },
+  remote: {
+    peakMin: 20,  peakMax: 400,
+    widthMin: 1,  widthMax: 50,
+    peakDefault: 40, widthDefault: 4, skewDefault: 1.0,
   },
   xray: {
     peakMin: 5000, peakMax: 20000,
@@ -92,7 +102,7 @@ const SLIDER_CFG = {
   bulb: {
     peakMin: 400,  peakMax: 1200,
     widthMin: 5,   widthMax: 300,
-    peakDefault: 614, widthDefault: 173, skewDefault: 4.2,
+    peakDefault: 200, widthDefault: 173, skewDefault: 7.0,
   },
 };
 // Log-scale peak slider helpers (per type)
@@ -177,7 +187,7 @@ const SOURCES = {
     group: 'hot',
   },
   bulb: {
-    label: 'Light Bulb',
+    label: 'Filament Bulb',
     src:         'images/Bulb.png',
     outsideSrc:  'images/BulbOutside.png',
     filamentSrc: 'images/BulbFilament.png',
@@ -189,6 +199,20 @@ const SOURCES = {
     src:   'images/Tanbulb.png',
     maskSrc: 'images/TanbulbElement.png',
     w: 357, natW: 737, natH: 409,
+    group: 'specialized',
+  },
+  gel: {
+    label: 'Gel Lamp',
+    src:     'images/GelFlatBaseGray.png',
+    maskSrc: 'images/GelGlow.png',
+    w: 280, natW: 1254, natH: 1254,
+    group: 'specialized',
+  },
+  remote: {
+    label: 'TV Remote',
+    src:       'images/Remote.png',
+    sourceSrc: 'images/RemoteGlow.png',
+    w: 200, natW: 1389, natH: 1132,
     group: 'specialized',
   },
   xray: {
@@ -239,6 +263,11 @@ const posToHz  = p => Math.round(FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, p));
 
 let uid = Date.now(); // unique enough across HMR reloads
 
+// Per-type default glow offsets (pixels, relative to device position)
+const GLOW_DEFAULTS = {
+  gel: { glowX: 0, glowY: -10 },
+};
+
 // ── Emission shape ────────────────────────────────────────────
 function EmissionShape({ item, band, intensity, dev }) {
   if (intensity < 0.005) return null;
@@ -247,28 +276,35 @@ function EmissionShape({ item, band, intensity, dev }) {
   const imgH = s.w * (s.natH / s.natW);
 
   if (band.id === 'IR') {
-    const therm = thermalScale(intensity, dev.glowPower, dev.glowScale);
+    // Bulb-specific thermal scale: onset at ~2% power, full brightness at 100%
+    // (generic thermalScale kicks in too early for the filament bulb)
+    const therm = item.type === 'bulb'
+      ? 4.0 * Math.pow(Math.max(0, intensity), 1.3)
+      : thermalScale(intensity, dev.glowPower, dev.glowScale);
 
     if (item.type === 'bulb') {
+      // Filament runs 2.5× hotter than the outer glow scale — brighter at low power in IR
+      const filamentTherm = therm * 2.5;
       return (
         <div className="absolute pointer-events-none"
           style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
           {THERMAL.map((layer, i) => {
-            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
-            if (fadeIn <= 0.01) return null;
+            const outerFadeIn    = clamp((therm         - layer.t) / 0.8, 0, 1);
+            const filamentFadeIn = clamp((filamentTherm - layer.t) / 0.8, 0, 1);
+            if (outerFadeIn <= 0.01 && filamentFadeIn <= 0.01) return null;
             return [
-              <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+              outerFadeIn > 0.01 && <img key={`o${i}`} src={s.outsideSrc} draggable={false}
                 style={{
                   position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
                   filter: `${layer.imgFilter} brightness(${dev.bulbOutsideMag}) blur(${dev.bulbOutsideBlur}px)`,
-                  opacity: fadeIn * layer.opacity,
+                  opacity: outerFadeIn * layer.opacity,
                   mixBlendMode: 'screen',
                 }} />,
-              <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+              filamentFadeIn > 0.01 && <img key={`f${i}`} src={s.filamentSrc} draggable={false}
                 style={{
                   position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
                   filter: `${layer.imgFilter} brightness(${dev.bulbFilamentMag}) blur(${dev.bulbFilamentBlur}px)`,
-                  opacity: fadeIn * layer.opacity,
+                  opacity: filamentFadeIn * layer.opacity,
                   mixBlendMode: 'screen',
                 }} />,
             ];
@@ -302,7 +338,33 @@ function EmissionShape({ item, band, intensity, dev }) {
               <img key={i} src={s.maskSrc}
                 style={{
                   position: 'absolute',
-                  top: dev.maskY[item.type], left: dev.maskX[item.type],
+                  top: dev.maskY[item.type] + (item.glowY ?? 0),
+                  left: dev.maskX[item.type] + (item.glowX ?? 0),
+                  width: s.w, height: imgH,
+                  filter: `${layer.imgFilter} blur(${layer.blur * dev.blurScale}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }}
+                draggable={false} />
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (item.type === 'remote' && s.sourceSrc) {
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {THERMAL.map((layer, i) => {
+            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01) return null;
+            return (
+              <img key={i} src={s.sourceSrc}
+                style={{
+                  position: 'absolute',
+                  top: dev.maskY[item.type] + (item.glowY ?? 0),
+                  left: dev.maskX[item.type] + (item.glowX ?? 0),
                   width: s.w, height: imgH,
                   filter: `${layer.imgFilter} blur(${layer.blur * dev.blurScale}px)`,
                   opacity: fadeIn * layer.opacity,
@@ -318,29 +380,36 @@ function EmissionShape({ item, band, intensity, dev }) {
 
   // ── Visible band — same multi-layer screen-blend as IR ────────
   if (band.id === 'Visible') {
-    const visScale = thermalScale(intensity, dev.glowPower, dev.glowScale);
+    // Bulb-specific vis scale: onset at ~10% power, full brightness at 100%
+    const visScale = item.type === 'bulb'
+      ? 6.66 * Math.max(0, intensity)
+      : thermalScale(intensity, dev.glowPower, dev.glowScale);
 
     if (item.type === 'bulb') {
       const visBlurScale = 0.3;
+      // Filament reaches full brightness at 35% power (3.6× the outer glow scale)
+      const filamentVisScale = visScale * 3.6;
       return (
         <div className="absolute pointer-events-none"
           style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
           {VIS_LAYERS.map((layer, i) => {
-            const fadeIn = clamp((visScale - layer.t) / 0.8, 0, 1);
-            if (fadeIn <= 0.01) return null;
+            const outerFadeIn    = clamp((visScale         - layer.t) / 0.8, 0, 1);
+            // ^1.8 curve: dim at low power, full brightness at high power
+            const filamentFadeIn = Math.pow(clamp((filamentVisScale - layer.t) / 0.8, 0, 1), 1.8);
+            if (outerFadeIn <= 0.01 && filamentFadeIn <= 0.01) return null;
             return [
-              <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+              outerFadeIn > 0.01 && <img key={`o${i}`} src={s.outsideSrc} draggable={false}
                 style={{
                   position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
                   filter: `brightness(${layer.bright}) blur(${layer.blur * visBlurScale}px)`,
-                  opacity: fadeIn * layer.opacity,
+                  opacity: outerFadeIn * layer.opacity,
                   mixBlendMode: 'screen',
                 }} />,
-              <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+              filamentFadeIn > 0.01 && <img key={`f${i}`} src={s.filamentSrc} draggable={false}
                 style={{
                   position: 'absolute', top: dev.maskY[item.type], left: 0, width: s.w, height: imgH,
-                  filter: `brightness(${layer.bright * 2}) blur(${layer.blur * visBlurScale * 0.4}px)`,
-                  opacity: fadeIn * layer.opacity,
+                  filter: `brightness(${layer.bright * 2}) blur(${layer.blur * visBlurScale * 0.12}px)`,
+                  opacity: filamentFadeIn * layer.opacity,
                   mixBlendMode: 'screen',
                 }} />,
             ];
@@ -360,7 +429,8 @@ function EmissionShape({ item, band, intensity, dev }) {
               <img key={i} src={s.maskSrc}
                 style={{
                   position: 'absolute',
-                  top: dev.maskY[item.type], left: dev.maskX[item.type],
+                  top: dev.maskY[item.type] + (item.glowY ?? 0),
+                  left: dev.maskX[item.type] + (item.glowX ?? 0),
                   width: s.w, height: imgH,
                   filter: `brightness(${layer.bright}) blur(${layer.blur * dev.blurScale}px)`,
                   opacity: fadeIn * layer.opacity,
@@ -384,8 +454,16 @@ function EmissionShape({ item, band, intensity, dev }) {
   const op    = clamp(ic, 0, 1);
 
   if (item.type === 'bulb') {
-    const camR         = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
-    const filamentR    = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 0.6);
+    // UV onset calibrated to 95%+ power; below threshold camR=0 → invisible
+    let camR, filamentR;
+    if (band.id === 'UV') {
+      const uvFrac = clamp((intensity - 0.043) * 20.0 / dev.bulbCamMax, 0, 1);
+      camR      = Math.pow(uvFrac, 1.8);
+      filamentR = Math.pow(uvFrac, 0.6);
+    } else {
+      camR      = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
+      filamentR = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 0.6);
+    }
     const bulbBlurB    = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
     const camBright = 3.5;
     const mY = dev.maskY[item.type];
@@ -438,7 +516,8 @@ function EmissionShape({ item, band, intensity, dev }) {
   }
 
   if (s.maskSrc) {
-    const mX = dev.maskX[item.type], mY = dev.maskY[item.type];
+    const mX = dev.maskX[item.type] + (item.glowX ?? 0);
+    const mY = dev.maskY[item.type] + (item.glowY ?? 0);
     return (
       <div className="absolute pointer-events-none"
         style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
@@ -462,6 +541,80 @@ function EmissionShape({ item, band, intensity, dev }) {
   return null;
 }
 
+
+// ── Natural (naked-eye) view — used by NONE mode in detector ──
+function NaturalView({ item, dev, bandRanges }) {
+  const s    = SOURCES[item.type];
+  const imgH = s.w * (s.natH / s.natW);
+
+  const visBand      = bandRanges.find(b => b.id === 'Visible');
+  const visIntensity = bandIntensity(visBand.lo, visBand.hi, item.peak, item.widthHz, item.skew)
+                       * (item.amplitude / 400);
+  const visC     = visCurve(visIntensity * 2);
+  const visBloom = clamp(1 + visC * 5, 1, 6);
+  const visSharp = clamp(1 + visC * 4, 1, 5);
+  const visBlurB = (10 + visC * 40) * dev.blurScale * dev.visBlur[item.type];
+  const visBlurD = (2  + visC * 8)  * dev.blurScale * dev.visBlur[item.type];
+  const visOp    = clamp(visC * dev.visOpacity[item.type], 0, 1);
+
+  const gamma = x => x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1/2.4) - 0.055;
+  const [gr, gg, gb] = spectrumToRgb(item, visBand);
+  const glowColor = item.type === 'range'
+    ? 'rgb(255,40,0)'
+    : item.type === 'bulb'
+    ? 'rgb(255,160,0)'
+    : `rgb(${Math.round(gamma(gr)*255)},${Math.round(gamma(gg)*255)},${Math.round(gamma(gb)*255)})`;
+
+  return (
+    <div className="absolute pointer-events-none"
+      style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+      {/* Device image */}
+      <img src={s.src} draggable={false}
+        style={{ position: 'absolute', top: 0, left: 0, width: s.w, height: imgH }} />
+
+      {/* Bulb glow — colorize via CSS filter directly, no black isolation box */}
+      {item.type === 'bulb' && visIntensity > 0.005 && (() => {
+        const bulbR   = Math.pow(visC, 1.8);
+        const colorF  = `sepia(1) saturate(8) hue-rotate(${dev.visHue[item.type] + 10}deg) brightness`;
+        return (<>
+          <img src={s.outsideSrc} draggable={false} style={{
+            position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+            width: s.w, height: imgH,
+            filter: `${colorF}(${visBloom * dev.bulbVisBright}) blur(${visBlurB}px)`,
+            opacity: bulbR * 0.95, mixBlendMode: 'screen',
+          }} />
+          <img src={s.filamentSrc} draggable={false} style={{
+            position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+            width: s.w, height: imgH,
+            filter: `${colorF}(${visSharp * dev.bulbVisBright * 0.5}) blur(${visBlurD}px)`,
+            opacity: clamp(visOp * dev.bulbVisBright / 2, 0, 1), mixBlendMode: 'screen',
+          }} />
+        </>);
+      })()}
+
+      {/* maskSrc glow (range, tanbulb) — colorize via CSS filter */}
+      {s.maskSrc && visIntensity > 0.005 && (() => {
+        const hue = dev.visHue[item.type];
+        const sat = dev.visSat[item.type];
+        const colorF = `sepia(1) saturate(${sat}) hue-rotate(${hue}deg) brightness`;
+        return (<>
+          <img src={s.maskSrc} draggable={false} style={{
+            position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+            width: s.w, height: imgH,
+            filter: `${colorF}(${visBloom}) blur(${visBlurB}px)`,
+            opacity: visOp * 0.7, mixBlendMode: 'screen',
+          }} />
+          <img src={s.maskSrc} draggable={false} style={{
+            position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+            width: s.w, height: imgH,
+            filter: `${colorF}(${visSharp}) blur(${visBlurD}px)`,
+            opacity: visOp, mixBlendMode: 'screen',
+          }} />
+        </>);
+      })()}
+    </div>
+  );
+}
 
 // ── Emission graph (floats below bench item) ──────────────────
 const GRAPH_SAMPLES = 120;
@@ -573,6 +726,7 @@ export default function App() {
   const [items,        setItems]        = useState([]);
   const [drag,         setDrag]         = useState(null);
   const [selectedBand, setSelectedBand] = useState('Visible');
+  const [photoMode,    setPhotoMode]    = useState(false);
 
   // Frequency-scale dividers in Hz (log scale).
   // Initialised at geometric midpoints between adjacent band freqs.
@@ -600,19 +754,20 @@ export default function App() {
   // 4 circular band buttons — positions fine-tuned to the panel image
   const BTN_CX  = Math.round(882 * VS) - 13;           // -13 x offset
   const BTN_R   = Math.round(28  * VS);
-  const BTN_CYS = [196+12, 248-1, 300-4, 353-6];       // per-button y offsets: IR+12 Vis-1 UV-4 XRay-6
+  const BTN_CYS = [196+12, 248-1, 300-4, 353-6, 406];   // IR, Vis, UV, XRay, Photo
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
-    bulbOutsideBlur: 22, bulbFilamentBlur: 3,
+    bulbOutsideBlur: 22, bulbFilamentBlur: 1,
     bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
-    maskX: { range: -11, tanbulb: -9, bulb: 0, xray: 0 },
-    maskY: { range: -25, tanbulb: -5, bulb: 2, xray: 0 },
-    benchX: { range: -12, tanbulb: 2, bulb: 0, xray: 0 }, benchY: { range: -26, tanbulb: -10, bulb: 0, xray: 0 },
-    visOpacity: { range: 5.0,   tanbulb: 5.0,  bulb: 5.0,  xray: 1.0 },
-    visHue:     { range: -8,    tanbulb: -75,   bulb: 0,    xray: 0 },
-    visBlur:    { range: 3.0,   tanbulb: 4.0,   bulb: 3.0,  xray: 1.0 },
-    visSat:     { range: 5.0,   tanbulb: 20.0,  bulb: 8.0,  xray: 1.0 },
-    visBright:  { range: 1.0,   tanbulb: 1.0,   bulb: 1.0,  xray: 1.0 } };
+    maskX: { range: -11, tanbulb: -9, bulb: 0, xray: 0, gel: 0, remote: 0 },
+    maskY: { range: -25, tanbulb: -5, bulb: 2, xray: 0, gel: 0, remote: 0 },
+    benchX: { range: -12, tanbulb: 2, bulb: 0, xray: 0, gel: 0, remote: 0 },
+    benchY: { range: -26, tanbulb: -10, bulb: 0, xray: 0, gel: 0, remote: 0 },
+    visOpacity: { range: 5.0,  tanbulb: 5.0,  bulb: 5.0,  xray: 1.0, gel: 5.0,  remote: 0 },
+    visHue:     { range: -8,   tanbulb: -75,  bulb: 0,    xray: 0,   gel: -88,  remote: 0 },
+    visBlur:    { range: 3.0,  tanbulb: 4.0,  bulb: 3.0,  xray: 1.0, gel: 4.5,  remote: 1.0 },
+    visSat:     { range: 5.0,  tanbulb: 20.0, bulb: 8.0,  xray: 1.0, gel: 28.0, remote: 1.0 },
+    visBright:  { range: 1.0,  tanbulb: 1.0,  bulb: 1.0,  xray: 1.0, gel: 1.0,  remote: 1.0 } };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
@@ -715,6 +870,8 @@ export default function App() {
               amplitude: 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
               peak: SLIDER_CFG[drag.type].peakDefault,
               widthHz: SLIDER_CFG[drag.type].widthDefault,
+              glowX: GLOW_DEFAULTS[drag.type]?.glowX ?? 0,
+              glowY: GLOW_DEFAULTS[drag.type]?.glowY ?? 0,
             }];
           });
         }
@@ -941,6 +1098,25 @@ export default function App() {
                         {item.skew.toFixed(1)}
                       </span>
                     </div>
+                    {/* Glow X/Y offset sliders */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Glow X</span>
+                      <input type="range" min="-80" max="80" value={item.glowX ?? 0}
+                        className="flex-1 cursor-pointer accent-cyan-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { glowX: +e.target.value })} />
+                      <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                        {item.glowX ?? 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Glow Y</span>
+                      <input type="range" min="-80" max="80" value={item.glowY ?? 0}
+                        className="flex-1 cursor-pointer accent-cyan-400" style={{ height: '3px' }}
+                        onChange={e => updateItem(item.id, { glowY: +e.target.value })} />
+                      <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
+                        {item.glowY ?? 0}
+                      </span>
+                    </div>
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5">
@@ -953,7 +1129,7 @@ export default function App() {
                         if (item.type === 'range') {
                           updateItem(item.id, { amplitude: v, peak: Math.round(50 + t * 190) });
                         } else if (item.type === 'bulb') {
-                          updateItem(item.id, { amplitude: v, peak: Math.round(400 + t * 200) });
+                          updateItem(item.id, { amplitude: v, peak: Math.round(200 + t * 350) });
                         } else {
                           updateItem(item.id, { amplitude: v });
                         }
@@ -1013,7 +1189,9 @@ export default function App() {
                   <>
                     {/* Bloom — wide soft layer */}
                     <div style={{
-                      position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+                      position: 'absolute',
+                      top: dev.benchY[item.type] + (item.glowY ?? 0),
+                      left: dev.benchX[item.type] + (item.glowX ?? 0),
                       width: s.w, height: imgH,
                       filter: `blur(${visBlurB}px)`,
                       opacity: visOp * 0.7, mixBlendMode: 'screen',
@@ -1027,7 +1205,9 @@ export default function App() {
                     </div>
                     {/* Sharp — tight core */}
                     <div style={{
-                      position: 'absolute', top: dev.benchY[item.type], left: dev.benchX[item.type],
+                      position: 'absolute',
+                      top: dev.benchY[item.type] + (item.glowY ?? 0),
+                      left: dev.benchX[item.type] + (item.glowX ?? 0),
                       width: s.w, height: imgH,
                       filter: `blur(${visBlurD}px)`,
                       opacity: visOp, mixBlendMode: 'screen',
@@ -1042,6 +1222,26 @@ export default function App() {
                   </>
                 )}
               </div>
+              {/* Graph on bench — visible in dev mode with Show Graphs, regardless of detector */}
+              {devMode && showGraphs && (() => {
+                const graphW = (item.type === 'bulb' || item.type === 'xray')
+                  ? Math.round(panelW * 1.4) : panelW;
+                const graphLeft = Math.round((s.w - graphW) / 2);
+                return (
+                  <div style={{
+                    position: 'absolute',
+                    left: graphLeft,
+                    bottom: '100%',
+                    marginBottom: item.type === 'range' ? 18 : 8,
+                    width: graphW,
+                    pointerEvents: 'none',
+                    zIndex: 30,
+                  }}>
+                    <EmissionGraph item={item} bandRanges={bandRanges} width={graphW}
+                      devMode={devMode} selectedBand={selectedBand} />
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -1083,7 +1283,7 @@ export default function App() {
             position: 'absolute', left: SCREEN_L, top: SCREEN_T,
             width: SCREEN_W, height: SCREEN_H,
             overflow: 'hidden', zIndex: 1,
-            background: '#000',
+            background: photoMode ? 'transparent' : '#000',
           }}
         >
           {/* CRT scanlines */}
@@ -1093,8 +1293,8 @@ export default function App() {
             backgroundSize: '100% 3px',
           }} />
 
-          {/* Mode title — inside screen, top center */}
-          {(() => {
+          {/* Mode title — hidden in NONE mode */}
+          {!photoMode && (() => {
             const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
             return (
@@ -1130,7 +1330,7 @@ export default function App() {
             );
           })()}
 
-          {items.length === 0 ? (
+          {items.length === 0 && !photoMode ? (
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               height: '100%', textAlign: 'center', padding: 12,
@@ -1146,6 +1346,11 @@ export default function App() {
               left: -(viewerPos.x + SCREEN_L),
               top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
             }}>
+              {/* Table background — visible in NONE mode */}
+              {photoMode && (
+                <img src="images/Table.PNG" draggable={false}
+                  style={{ position: 'absolute', left: 0, top: -55, width: '100vw', pointerEvents: 'none' }} />
+              )}
               {items.map(item => {
                 const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
                                 * (item.amplitude / 400);
@@ -1154,20 +1359,31 @@ export default function App() {
                 const panelOff = Math.round((s.w - panelW) / 2);
                 return (
                   <React.Fragment key={item.id}>
-                    <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
-                    {showGraphs && (
-                      <div style={{
-                        position: 'absolute',
-                        left: item.x + panelOff,
-                        top: item.y - 20,
-                        width: panelW,
-                        pointerEvents: 'none',
-                        zIndex: 20,
-                      }}>
-                        <EmissionGraph item={item} bandRanges={bandRanges} width={panelW}
-                          devMode={devMode} selectedBand={selectedBand} />
-                      </div>
-                    )}
+                    {photoMode
+                      ? <NaturalView item={item} dev={dev} bandRanges={bandRanges} />
+                      : <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
+                    }}
+                    {showGraphs && (() => {
+                      const graphW = (item.type === 'bulb' || item.type === 'xray')
+                        ? Math.round(panelW * 1.4) : panelW;
+                      const graphLeft = item.x + Math.round((s.w - graphW) / 2);
+                      return (
+                        <div style={{
+                          position: 'absolute',
+                          left: graphLeft,
+                          top: item.y - 55,
+                          width: graphW,
+                          pointerEvents: 'none',
+                          zIndex: 20,
+                          background: photoMode ? 'rgba(255,255,255,0.82)' : 'transparent',
+                          borderRadius: photoMode ? 4 : 0,
+                          paddingTop: photoMode ? 35 : 0,
+                        }}>
+                          <EmissionGraph item={item} bandRanges={bandRanges} width={graphW}
+                            devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
+                        </div>
+                      );
+                    })()}
                   </React.Fragment>
                 );
               })}
@@ -1186,10 +1402,8 @@ export default function App() {
 
         {/* Band selector buttons + labels */}
         {BANDS.map((b, i) => {
-          const isActive = selectedBand === b.id;
+          const isActive = !photoMode && selectedBand === b.id;
           const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
-          // Right-justify all labels so their right edge aligns with where "R" in IR sat at 11px
-          // axis_x ≈ BTN_CX - BTN_R - 6  →  right = VIEWER_W - axis_x
           const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
           return (
             <div key={b.id}>
@@ -1245,11 +1459,74 @@ export default function App() {
                   transition: 'background 0.15s, box-shadow 0.15s',
                 }}
                 onPointerDown={e => e.stopPropagation()}
-                onClick={() => setSelectedBand(b.id)}
+                onClick={() => { setPhotoMode(false); setSelectedBand(b.id); }}
               />
             </div>
           );
         })}
+
+        {/* Photo mode button — 5th button below XRAY */}
+        {(() => {
+          const photoColor = '#a0b8a0';
+          const photoBtnActive = '#607860';
+          const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
+          return (
+            <div>
+              <div style={{
+                position: 'absolute',
+                right: labelRight + 15,
+                width: 90,
+                textAlign: 'right',
+                top: BTN_CYS[4] - 13,
+                zIndex: 10,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}>
+                <span style={{
+                  fontFamily: '"Courier New", Courier, monospace',
+                  fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+                  color: photoMode ? photoColor : 'rgba(255,255,255,0.28)',
+                  textShadow: photoMode ? [
+                    `0 0 2px ${photoColor}`,
+                    `0 0 8px ${photoColor}dd`,
+                    `0 0 18px ${photoColor}88`,
+                    `0 0 35px ${photoColor}44`,
+                  ].join(', ') : 'none',
+                  transition: 'color 0.12s, text-shadow 0.12s',
+                  filter: photoMode ? 'brightness(1.3) contrast(1.1)' : 'none',
+                  display: 'block',
+                }}>
+                  NONE
+                </span>
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: BTN_CX - BTN_R + 2,
+                  top:  BTN_CYS[4] - BTN_R + 2,
+                  width:  BTN_R * 2 - 4,
+                  height: BTN_R * 2 - 4,
+                  borderRadius: '50%',
+                  background: photoMode
+                    ? `radial-gradient(circle, #fff9 0%, ${photoColor}ee 45%, ${photoBtnActive} 100%)`
+                    : 'rgba(30,30,30,0.5)',
+                  boxShadow: photoMode ? [
+                    `0 0 3px 1px #fff8`,
+                    `0 0 8px 3px ${photoColor}`,
+                    `0 0 18px 6px ${photoColor}cc`,
+                    `0 0 36px 10px ${photoColor}77`,
+                    `0 0 60px 16px ${photoColor}33`,
+                  ].join(', ') : 'none',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  transition: 'background 0.15s, box-shadow 0.15s',
+                }}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={() => setPhotoMode(p => !p)}
+              />
+            </div>
+          );
+        })()}
 
       </div>}
 
