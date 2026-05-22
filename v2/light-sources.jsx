@@ -87,7 +87,7 @@ const SLIDER_CFG = {
   gel: {
     peakMin: 700,  peakMax: 1500,
     widthMin: 5,   widthMax: 200,
-    peakDefault: 800, widthDefault: 80, skewDefault: 1.0,
+    peakDefault: 825, widthDefault: 80, skewDefault: 1.0,
   },
   remote: {
     peakMin: 20,  peakMax: 400,
@@ -203,9 +203,12 @@ const SOURCES = {
   },
   gel: {
     label: 'Gel Lamp',
-    src:     'images/GelFlatBaseGray.png',
-    maskSrc: 'images/GelGlow.png',
-    w: 280, natW: 1254, natH: 1254,
+    src:         'images/GelFlatBaseGray.png',
+    outsideSrc:  'images/GelGlowWhite.png',   // diffuse dome glow (bench)
+    filamentSrc: 'images/GelGlowDots.png',    // LED dots (bench)
+    fieldSrc:    'images/GelGlowGray.png',    // mid-field pinkish glow around dots (bench)
+    maskSrc:     'images/GelGlowDots.png',    // used by detector (EmissionShape)
+    w: 336, natW: 1254, natH: 1254,
     group: 'specialized',
   },
   remote: {
@@ -265,8 +268,9 @@ let uid = Date.now(); // unique enough across HMR reloads
 
 // Per-type default glow offsets (pixels, relative to device position)
 const GLOW_DEFAULTS = {
-  gel: { glowX: 0, glowY: -10 },
+  gel: { glowX: 0, glowY: -12, glowHue: -88 },
 };
+
 
 // ── Emission shape ────────────────────────────────────────────
 function EmissionShape({ item, band, intensity, dev }) {
@@ -418,6 +422,39 @@ function EmissionShape({ item, band, intensity, dev }) {
       );
     }
 
+    if (item.type === 'gel') {
+      const gelG  = 5.0 * Math.pow(clamp(intensity * 10, 0, 1), 0.9); // scales with band intensity; UV/Vis ratio ≈ 1.20 at peak=809
+      const gelBg = 5.0 * Math.pow(clamp(intensity * 10, 0, 1), 1.9); // background: slower ramp at low power
+      const mX = dev.maskX[item.type] + (item.glowX ?? 0);
+      const mY = dev.maskY[item.type] + (item.glowY ?? 0);
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {VIS_LAYERS.map((layer, i) => {
+            const fadeIn   = clamp((gelG  - layer.t) / 0.8, 0, 1);
+            const bgFadeIn = clamp((gelBg - layer.t) / 0.8, 0, 1);
+            if (fadeIn <= 0.01 && bgFadeIn <= 0.01) return null;
+            return [
+              bgFadeIn > 0.01 && <img key={`w${i}`} src={s.outsideSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+                  filter: `brightness(${layer.bright}) blur(${layer.blur * dev.blurScale * 0.25}px)`,
+                  opacity: bgFadeIn * layer.opacity * 0.45,
+                  mixBlendMode: 'screen',
+                }} />,
+              <img key={`d${i}`} src={s.filamentSrc} draggable={false}
+                style={{
+                  position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+                  filter: `brightness(${layer.bright * 2}) blur(${layer.blur * dev.blurScale * 0.432}px)`,
+                  opacity: fadeIn * layer.opacity,
+                  mixBlendMode: 'screen',
+                }} />,
+            ];
+          })}
+        </div>
+      );
+    }
+
     if (s.maskSrc) {
       return (
         <div className="absolute pointer-events-none"
@@ -464,26 +501,26 @@ function EmissionShape({ item, band, intensity, dev }) {
       camR      = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 1.8);
       filamentR = Math.pow(Math.min(intensity / dev.bulbCamMax, 1), 0.6);
     }
-    const bulbBlurB    = (42 + camR * 42) * dev.blurScale * dev.visBlur[item.type];
+    const visBlurScale = 0.3;
     const camBright = 3.5;
     const mY = dev.maskY[item.type];
     return (
       <div className="absolute pointer-events-none"
         style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
-        {/* Outside — wide bloom */}
-        <img src={s.outsideSrc} draggable={false}
-          style={{
-            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
-            filter: `brightness(${bloom * camBright * 10}) contrast(20) blur(${bulbBlurB}px)`,
-            opacity: Math.min(camR * 1.05, 1), mixBlendMode: 'screen',
-          }} />
-        {/* Filament — tight core */}
-        <img src={s.filamentSrc} draggable={false}
-          style={{
-            position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
-            filter: `brightness(${sharp * camBright * 10}) contrast(20) blur(${dev.bulbFilamentBlur}px)`,
-            opacity: Math.min(filamentR * 1.05, 1), mixBlendMode: 'screen',
-          }} />
+        {VIS_LAYERS.map((layer, i) => [
+          camR > 0.01 && <img key={`o${i}`} src={s.outsideSrc} draggable={false}
+            style={{
+              position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+              filter: `${band.colorFilter} brightness(${bloom * camBright * 10}) contrast(20) blur(${layer.blur * visBlurScale}px)`,
+              opacity: Math.min(camR * layer.opacity * 1.05, 1), mixBlendMode: 'screen',
+            }} />,
+          filamentR > 0.01 && <img key={`f${i}`} src={s.filamentSrc} draggable={false}
+            style={{
+              position: 'absolute', top: mY, left: 0, width: s.w, height: imgH,
+              filter: `${band.colorFilter} brightness(${sharp * camBright * 10}) contrast(20) blur(${layer.blur * visBlurScale * 0.12}px)`,
+              opacity: Math.min(filamentR * layer.opacity * 1.05, 1), mixBlendMode: 'screen',
+            }} />,
+        ])}
       </div>
     );
   }
@@ -515,26 +552,58 @@ function EmissionShape({ item, band, intensity, dev }) {
     );
   }
 
+  if (item.type === 'gel') {
+    const gelG  = 5.0 * Math.pow(clamp(intensity * 10, 0, 1), 0.9); // scales with band intensity; UV/Vis ratio ≈ 1.20 at peak=809
+    const gelBg = 5.0 * Math.pow(clamp(intensity * 10, 0, 1), 1.9); // background: slower ramp at low power
+    const mX = dev.maskX[item.type] + (item.glowX ?? 0);
+    const mY = dev.maskY[item.type] + (item.glowY ?? 0);
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+        {VIS_LAYERS.map((layer, i) => {
+          const fadeIn   = clamp((gelG  - layer.t) / 0.8, 0, 1);
+          const bgFadeIn = clamp((gelBg - layer.t) / 0.8, 0, 1);
+          if (fadeIn <= 0.01 && bgFadeIn <= 0.01) return null;
+          return [
+            bgFadeIn > 0.01 && <img key={`w${i}`} src={s.outsideSrc} draggable={false}
+              style={{
+                position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+                filter: `brightness(${layer.bright}) blur(${layer.blur * dev.blurScale * 0.25}px)`,
+                opacity: bgFadeIn * layer.opacity * 0.45,
+                mixBlendMode: 'screen',
+              }} />,
+            fadeIn > 0.01 && <img key={`d${i}`} src={s.filamentSrc} draggable={false}
+              style={{
+                position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+                filter: `brightness(${layer.bright * 2}) blur(${layer.blur * dev.blurScale * 0.432}px)`,
+                opacity: fadeIn * layer.opacity,
+                mixBlendMode: 'screen',
+              }} />,
+          ];
+        })}
+      </div>
+    );
+  }
+
   if (s.maskSrc) {
     const mX = dev.maskX[item.type] + (item.glowX ?? 0);
     const mY = dev.maskY[item.type] + (item.glowY ?? 0);
     return (
       <div className="absolute pointer-events-none"
         style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
-        <img src={s.maskSrc}
-          style={{
-            position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
-            filter: `${band.colorFilter} brightness(${bloom}) blur(${blurB}px)`,
-            opacity: op * 0.7, mixBlendMode: 'screen',
-          }}
-          draggable={false} />
-        <img src={s.maskSrc}
-          style={{
-            position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
-            filter: `${band.colorFilter} brightness(${sharp}) blur(${blurD}px)`,
-            opacity: op, mixBlendMode: 'screen',
-          }}
-          draggable={false} />
+        {VIS_LAYERS.map((layer, i) => {
+          const fadeIn = clamp((op - layer.t) / 0.8, 0, 1);
+          if (fadeIn <= 0.01) return null;
+          return (
+            <img key={i} src={s.maskSrc} draggable={false}
+              style={{
+                position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+                filter: `${band.colorFilter} brightness(${layer.bright}) blur(${layer.blur * dev.blurScale}px)`,
+                opacity: fadeIn * layer.opacity,
+                mixBlendMode: 'screen',
+              }} />
+          );
+        })}
       </div>
     );
   }
@@ -593,7 +662,7 @@ function NaturalView({ item, dev, bandRanges }) {
       })()}
 
       {/* maskSrc glow (range, tanbulb) — colorize via CSS filter */}
-      {s.maskSrc && visIntensity > 0.005 && (() => {
+      {s.maskSrc && item.type !== 'gel' && visIntensity > 0.005 && (() => {
         const hue = dev.visHue[item.type];
         const sat = dev.visSat[item.type];
         const colorF = `sepia(1) saturate(${sat}) hue-rotate(${hue}deg) brightness`;
@@ -610,6 +679,45 @@ function NaturalView({ item, dev, bandRanges }) {
             filter: `${colorF}(${visSharp}) blur(${visBlurD}px)`,
             opacity: visOp, mixBlendMode: 'screen',
           }} />
+        </>);
+      })()}
+
+      {/* Gel lamp glow — exact same layers as bench view */}
+      {item.type === 'gel' && item.amplitude > 0 && (() => {
+        const g      = Math.pow(clamp(item.amplitude / 500, 0, 1), 0.5);
+        const gWhite = Math.pow(clamp((item.amplitude - 150) / 350, 0, 1), 0.5);
+        const gTop   = dev.benchY[item.type] + (item.glowY ?? 0);
+        const gLeft  = dev.benchX[item.type] + (item.glowX ?? 0);
+        const glowLayer = (src, blur, color, opacity) => (
+          <div style={{
+            position: 'absolute', top: gTop, left: gLeft, width: s.w, height: imgH,
+            filter: `blur(${blur}px)`, opacity: Math.min(opacity, 1),
+            mixBlendMode: 'normal', pointerEvents: 'none', zIndex: 1,
+          }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              backgroundColor: color,
+              maskImage: `url(${src})`,
+              WebkitMaskImage: `url(${src})`,
+              maskMode: 'luminance',
+              maskSize: '100% 100%',
+              WebkitMaskSize: '100% 100%',
+            }} />
+          </div>
+        );
+        const gl = item.gelBenchLayers ?? [
+          { on: true, opMult: 0.5  }, { on: true, opMult: 1.5  },
+          { on: true, opMult: 1.35 }, { on: true, opMult: 1.35, hue: 310, lightness: 75 },
+          { on: true, opMult: 0.9  },
+        ];
+        const vis = i => gl[i].on;
+        const op  = (base, i) => Math.min(base * gl[i].opMult, 1);
+        return (<>
+          {vis(0) && glowLayer(s.outsideSrc,   8 + gWhite * 12, '#6600ff',                                          op(gWhite * 1.40, 0))}
+          {vis(1) && s.fieldSrc && glowLayer(s.fieldSrc, 12 + g * 20, '#bb44ff',                                    op(g * 1.26, 1))}
+          {vis(2) && glowLayer(s.filamentSrc,  1 + g * 2,       '#6600ff',                                          op(g * 1.40, 2))}
+          {vis(4) && glowLayer(s.filamentSrc,  0.4,             '#8800ff',                                          op(g, 4))}
+          {vis(3) && glowLayer(s.filamentSrc,  3 + g * 3,       `hsl(${gl[3].hue ?? 310}, 100%, ${gl[3].lightness ?? 75}%)`, op(g, 3))}
         </>);
       })()}
     </div>
@@ -870,8 +978,16 @@ export default function App() {
               amplitude: 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
               peak: SLIDER_CFG[drag.type].peakDefault,
               widthHz: SLIDER_CFG[drag.type].widthDefault,
-              glowX: GLOW_DEFAULTS[drag.type]?.glowX ?? 0,
-              glowY: GLOW_DEFAULTS[drag.type]?.glowY ?? 0,
+              glowX:   GLOW_DEFAULTS[drag.type]?.glowX   ?? 0,
+              glowY:   GLOW_DEFAULTS[drag.type]?.glowY   ?? 0,
+              glowHue: GLOW_DEFAULTS[drag.type]?.glowHue ?? null,
+              ...(drag.type === 'gel' ? { gelBenchLayers: [
+                { on: true, opMult: 0.5  },  // 0 dome-T
+                { on: true, opMult: 1.5  },  // 1 field
+                { on: true, opMult: 1.35 },  // 2 dots-W
+                { on: true, opMult: 1.35, hue: 310, lightness: 75 },  // 3 neon-1
+                { on: true, opMult: 0.9  },  // 4 neon-2
+              ] } : {}),
             }];
           });
         }
@@ -1117,6 +1233,57 @@ export default function App() {
                         {item.glowY ?? 0}
                       </span>
                     </div>
+                    {item.type === 'gel' && item.gelBenchLayers && (() => {
+                      const labels = ['dome-T','field','dots-W','neon-1','neon-2'];
+                      const upd = (i, patch) => {
+                        const next = item.gelBenchLayers.map((l, j) => j === i ? { ...l, ...patch } : l);
+                        updateItem(item.id, { gelBenchLayers: next });
+                      };
+                      return (
+                        <div style={{ marginTop: 3 }}>
+                          {labels.map((lbl, i) => {
+                            const layer = item.gelBenchLayers[i];
+                            return (
+                              <div key={i} style={{ marginBottom: 3 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input type="checkbox" checked={layer.on}
+                                    style={{ width: 10, height: 10, accentColor: '#a78bfa', flexShrink: 0, cursor: 'pointer' }}
+                                    onChange={e => upd(i, { on: e.target.checked })} />
+                                  <span style={{ fontSize: 7, fontFamily: 'monospace', width: 42, flexShrink: 0,
+                                    color: layer.on ? '#a1a1aa' : '#52525b' }}>{lbl}</span>
+                                  <input type="range" min="0" max="200" step="5" value={Math.round(layer.opMult * 100)}
+                                    disabled={!layer.on}
+                                    style={{ flex: 1, height: 3, cursor: 'pointer', accentColor: '#f472b6' }}
+                                    onChange={e => upd(i, { opMult: +e.target.value / 100 })} />
+                                  <span style={{ fontSize: 7, fontFamily: 'monospace', width: 28, textAlign: 'right',
+                                    flexShrink: 0, color: '#71717a' }}>{layer.opMult.toFixed(2)}×</span>
+                                </div>
+                                {lbl === 'neon-1' && (<>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, paddingLeft: 14 }}>
+                                    <span style={{ fontSize: 6, color: '#71717a', flexShrink: 0, width: 12 }}>hue</span>
+                                    <input type="range" min="240" max="340" step="1" value={layer.hue ?? 310}
+                                      disabled={!layer.on}
+                                      style={{ flex: 1, height: 3, cursor: 'pointer', accentColor: '#cc44ff' }}
+                                      onChange={e => upd(i, { hue: +e.target.value })} />
+                                    <span style={{ fontSize: 7, fontFamily: 'monospace', width: 28, textAlign: 'right',
+                                      flexShrink: 0, color: '#71717a' }}>{layer.hue ?? 310}°</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, paddingLeft: 14 }}>
+                                    <span style={{ fontSize: 6, color: '#71717a', flexShrink: 0, width: 12 }}>lit</span>
+                                    <input type="range" min="20" max="90" step="1" value={layer.lightness ?? 50}
+                                      disabled={!layer.on}
+                                      style={{ flex: 1, height: 3, cursor: 'pointer', accentColor: '#cc44ff' }}
+                                      onChange={e => upd(i, { lightness: +e.target.value })} />
+                                    <span style={{ fontSize: 7, fontFamily: 'monospace', width: 28, textAlign: 'right',
+                                      flexShrink: 0, color: '#71717a' }}>{layer.lightness ?? 50}%</span>
+                                  </div>
+                                </>)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5">
@@ -1129,7 +1296,7 @@ export default function App() {
                         if (item.type === 'range') {
                           updateItem(item.id, { amplitude: v, peak: Math.round(50 + t * 190) });
                         } else if (item.type === 'bulb') {
-                          updateItem(item.id, { amplitude: v, peak: Math.round(200 + t * 350) });
+                          updateItem(item.id, { amplitude: v, peak: Math.round(200 + t * 380) });
                         } else {
                           updateItem(item.id, { amplitude: v });
                         }
@@ -1185,42 +1352,83 @@ export default function App() {
                     </>
                   );
                 })()}
-                {s.maskSrc && visIntensity > 0.005 && (
-                  <>
-                    {/* Bloom — wide soft layer */}
+                {/* Gel lamp — amplitude^0.5 ramp keeps building all the way to 100% */}
+                {item.type === 'gel' && item.amplitude > 0 && (() => {
+                  const g      = Math.pow(clamp(item.amplitude / 500, 0, 1), 0.5);
+                  const gWhite = Math.pow(clamp((item.amplitude - 150) / 350, 0, 1), 0.5);
+                  const gTop  = dev.benchY[item.type] + (item.glowY ?? 0);
+                  const gLeft = dev.benchX[item.type] + (item.glowX ?? 0);
+                  // All glow layers: luminance-mask a solid color, blur the container, normal blend.
+                  // Covers underlying pixels (no screen-blend washout over white device image).
+                  const glowLayer = (src, blur, color, op) => (
                     <div style={{
-                      position: 'absolute',
-                      top: dev.benchY[item.type] + (item.glowY ?? 0),
-                      left: dev.benchX[item.type] + (item.glowX ?? 0),
-                      width: s.w, height: imgH,
-                      filter: `blur(${visBlurB}px)`,
-                      opacity: visOp * 0.7, mixBlendMode: 'screen',
-                      isolation: 'isolate', pointerEvents: 'none',
-                      backgroundColor: 'black',
+                      position: 'absolute', top: gTop, left: gLeft, width: s.w, height: imgH,
+                      filter: `blur(${blur}px)`, opacity: Math.min(op, 1),
+                      mixBlendMode: 'normal', pointerEvents: 'none', zIndex: 1,
                     }}>
-                      <img src={s.maskSrc} draggable={false}
-                        style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
-                      <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
-                        filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        backgroundColor: color,
+                        maskImage: `url(${src})`,
+                        WebkitMaskImage: `url(${src})`,
+                        maskMode: 'luminance',
+                        maskSize: '100% 100%',
+                        WebkitMaskSize: '100% 100%',
+                      }} />
                     </div>
-                    {/* Sharp — tight core */}
-                    <div style={{
-                      position: 'absolute',
-                      top: dev.benchY[item.type] + (item.glowY ?? 0),
-                      left: dev.benchX[item.type] + (item.glowX ?? 0),
-                      width: s.w, height: imgH,
-                      filter: `blur(${visBlurD}px)`,
-                      opacity: visOp, mixBlendMode: 'screen',
-                      isolation: 'isolate', pointerEvents: 'none',
-                      backgroundColor: 'black',
-                    }}>
-                      <img src={s.maskSrc} draggable={false}
-                        style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
-                      <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
-                        filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
-                    </div>
-                  </>
-                )}
+                  );
+                  const gl = item.gelBenchLayers ?? [
+                    { on: true, opMult: 0.5  }, { on: true, opMult: 1.5  },
+                    { on: true, opMult: 1.35 }, { on: true, opMult: 1.35 },
+                    { on: true, opMult: 0.9  },
+                  ];
+                  const vis = i => gl[i].on;
+                  const op  = (base, i) => Math.min(base * gl[i].opMult, 1);
+                  return (<>
+                    {vis(0) && glowLayer(s.outsideSrc,   8 + gWhite * 12, '#6600ff', op(gWhite * 1.40, 0))}
+                    {vis(1) && s.fieldSrc && glowLayer(s.fieldSrc, 12 + g * 20, '#bb44ff', op(g * 1.26, 1))}
+                    {vis(2) && glowLayer(s.filamentSrc,  1 + g * 2,       '#6600ff', op(g * 1.40, 2))}
+                    {vis(4) && glowLayer(s.filamentSrc,  0.4,             '#8800ff', op(g, 4))}
+                    {vis(3) && glowLayer(s.filamentSrc,  3 + g * 3,       `hsl(${gl[3].hue ?? 310}, 100%, ${gl[3].lightness ?? 50}%)`, op(g, 3))}
+                  </>);
+                })()}
+
+                {s.maskSrc && item.type !== 'gel' && visIntensity > 0.005 && (
+                    <>
+                      {/* Bloom — wide soft layer */}
+                      <div style={{
+                        position: 'absolute',
+                        top: dev.benchY[item.type] + (item.glowY ?? 0),
+                        left: dev.benchX[item.type] + (item.glowX ?? 0),
+                        width: s.w, height: imgH,
+                        filter: `blur(${visBlurB}px)`,
+                        opacity: visOp * 0.7, mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none',
+                        backgroundColor: 'black',
+                      }}>
+                        <img src={s.maskSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
+                          filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
+                      </div>
+                      {/* Sharp — tight core */}
+                      <div style={{
+                        position: 'absolute',
+                        top: dev.benchY[item.type] + (item.glowY ?? 0),
+                        left: dev.benchX[item.type] + (item.glowX ?? 0),
+                        width: s.w, height: imgH,
+                        filter: `blur(${visBlurD}px)`,
+                        opacity: visOp, mixBlendMode: 'screen',
+                        isolation: 'isolate', pointerEvents: 'none',
+                        backgroundColor: 'black',
+                      }}>
+                        <img src={s.maskSrc} draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: glowColor, mixBlendMode: 'multiply',
+                          filter: `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]}) brightness(${dev.visBright[item.type]})` }} />
+                      </div>
+                    </>
+                  )}
               </div>
               {/* Graph on bench — visible in dev mode with Show Graphs, regardless of detector */}
               {devMode && showGraphs && (() => {
@@ -1377,7 +1585,7 @@ export default function App() {
                           zIndex: 20,
                           background: photoMode ? 'rgba(255,255,255,0.82)' : 'transparent',
                           borderRadius: photoMode ? 4 : 0,
-                          paddingTop: photoMode ? 35 : 0,
+                          paddingTop: 35,
                         }}>
                           <EmissionGraph item={item} bandRanges={bandRanges} width={graphW}
                             devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
