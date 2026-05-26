@@ -247,24 +247,28 @@ const BANDS = [
     id: 'IR',      label: 'Infrared',    freq: 200,
     divColor: '#c04020',
     btnActive: '#b83010',
+    glowColor: '#ff5321',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(-15deg)',
   },
   {
     id: 'Visible', label: 'Visible',     freq: 800,
     divColor: '#a09050',
     btnActive: '#706840',
+    glowColor: '#e7c32f',
     colorFilter: 'sepia(0.15) saturate(1.4) brightness(1.2)',
   },
   {
     id: 'UV',      label: 'Ultraviolet', freq: 3200,
     divColor: '#8030cc',
     btnActive: '#6b1faa',
+    glowColor: '#d822f0',
     colorFilter: 'sepia(1) saturate(8) hue-rotate(262deg)',
   },
   {
     id: 'XRay',    label: 'X-Ray',       freq: 12000,
     divColor: '#2060a0',
     btnActive: '#1e4a7a',
+    glowColor: '#75e0ff',
     colorFilter: 'sepia(1) saturate(5) hue-rotate(195deg) brightness(1.4)',
   },
 ];
@@ -898,6 +902,10 @@ export default function App() {
   const [devBulbCamMax,       setDevBulbCamMax]       = useState(0.6);
   const [devBtnX,             setDevBtnX]             = useState(0);
   const [devBtnY,             setDevBtnY]             = useState(0);
+  const [devShowGraphsX,      setDevShowGraphsX]      = useState(0);
+  const [devShowGraphsY,      setDevShowGraphsY]      = useState(0);
+  const [devShowGraphsBtnX,   setDevShowGraphsBtnX]   = useState(0);
+  const [devShowGraphsBtnY,   setDevShowGraphsBtnY]   = useState(0);
   const [devScreenX,          setDevScreenX]          = useState(0);
   const [devScreenY,          setDevScreenY]          = useState(0);
   const [devBtnYVis,          setDevBtnYVis]          = useState(0);
@@ -1160,20 +1168,6 @@ export default function App() {
             Dev Mode
           </label>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <input
-            id="showGraphs"
-            type="checkbox"
-            checked={showGraphs}
-            onChange={e => setShowGraphs(e.target.checked)}
-            style={{ accentColor: '#22d3ee', width: 22, height: 22, cursor: 'pointer' }}
-          />
-          <label htmlFor="showGraphs" style={{
-            fontSize: 18, color: 'black', cursor: 'pointer', userSelect: 'none',
-          }}>
-            Show Graphs
-          </label>
-        </div>
       </div>
 
 
@@ -1193,48 +1187,27 @@ export default function App() {
                      rounded-2xl px-3 pt-2 pb-3 flex flex-col gap-2
                      border transition-colors duration-150"
           style={{
-            background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)',
+            background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0)',
             borderColor: benchDragging ? 'rgba(255,90,60,0.5)' : 'rgba(255,255,255,0.18)',
           }}>
-          {/* Detector card */}
-          {(() => {
-            const placed = showDetector;
-            return (
-              <div>
-                <p style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.7)', textAlign: 'left', marginBottom: 4 }}>
-                  Detector
-                </p>
-                <div
-                  className="touch-none"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    opacity: placed ? 0.38 : 1,
-                    cursor: placed ? 'default' : 'grab',
-                    padding: '3px 4px',
-                    borderRadius: 6,
-                    background: placed ? 'rgba(255,255,255,0.04)' : 'transparent',
-                  }}
-                  onPointerDown={placed ? undefined : e => {
-                    e.preventDefault();
-                    setDrag({
-                      from: 'parts', type: 'viewer', id: null,
-                      cx: e.clientX, cy: e.clientY,
-                      sx: e.clientX, sy: e.clientY,
-                      ox: VIEWER_W / 2,
-                      oy: VIEWER_H * 0.1,
-                    });
-                  }}>
-                  <img src="images/viewer.png" alt="Detector" draggable={false}
-                    className="drop-shadow pointer-events-none"
-                    style={{ width: Math.round(40 * 1224 / 1024), height: 40, objectFit: 'contain', flexShrink: 0 }} />
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, flex: 1 }}>
-                    Radiation Detector
-                  </span>
-                  {placed && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>✓</span>}
-                </div>
-              </div>
-            );
-          })()}
+          {/* Detector toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px' }}
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setShowDetector(d => !d)}>
+            <img src="images/PowerOn.png" draggable={false}
+              style={{
+                width: 32, height: Math.round(32 * 61/64), cursor: 'pointer', flexShrink: 0,
+                opacity: showDetector ? 1 : 0.4,
+                filter: showDetector ? 'drop-shadow(0 0 6px #f24a38cc)' : 'none',
+              }} />
+            <span style={{
+              fontSize: 22, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: 'black', cursor: 'pointer', userSelect: 'none', lineHeight: 1.1,
+            }}>
+              Show<br />Detector
+            </span>
+          </div>
+
 
           {/* Source group renderer */}
           {[
@@ -1702,6 +1675,14 @@ export default function App() {
             value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
           <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
             value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
+          <DevSlider label="ShowGr X" min={-300} max={300} step={1}
+            value={devShowGraphsX} onChange={setDevShowGraphsX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="ShowGr Y" min={-300} max={300} step={1}
+            value={devShowGraphsY} onChange={setDevShowGraphsY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="GrBtn X" min={-300} max={700} step={1}
+            value={devShowGraphsBtnX} onChange={setDevShowGraphsBtnX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="GrBtn Y" min={-300} max={700} step={1}
+            value={devShowGraphsBtnY} onChange={setDevShowGraphsBtnY} fmt={v => v.toFixed(0)} />
           <DevSlider label="Screen X" min={-300} max={300} step={1}
             value={devScreenX} onChange={setDevScreenX} fmt={v => v.toFixed(0)} />
           <DevSlider label="Screen Y" min={-300} max={300} step={1}
@@ -1744,6 +1725,33 @@ export default function App() {
             background: photoMode ? 'transparent' : '#000',
           }}
         >
+          {/* Show Graphs label */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 14 + devShowGraphsX,
+              top: '50%',
+              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px))`,
+              zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
+            }}
+            onClick={() => setShowGraphs(g => !g)}>
+            <span style={{
+              fontFamily: '"Courier New", Courier, monospace',
+              fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+              color: showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.6)',
+              textShadow: showGraphs ? [
+                '0 0 2px #fe2b71',
+                '0 0 8px #fe2b71dd',
+                '0 0 18px #fe2b7188',
+                '0 0 35px #fe2b7144',
+              ].join(', ') : 'none',
+              filter: showGraphs ? 'brightness(1.3) contrast(1.1)' : 'none',
+              userSelect: 'none', lineHeight: 1.0, textAlign: 'left', display: 'block',
+            }}>
+              GRAPHS
+            </span>
+          </div>
+
           {/* CRT scanlines */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
@@ -1756,7 +1764,7 @@ export default function App() {
             const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#aa22ff', XRay: '#44aaff' };
             const title = photoMode ? 'CAMERA MODE' : titleMap[selectedBand];
-            const color = photoMode ? '#22d3ee' : colorMap[selectedBand];
+            const color = photoMode ? '#9df85c' : colorMap[selectedBand];
             return (
               <div style={{
                 position: 'absolute', top: 35, left: 0, right: 0,
@@ -1838,6 +1846,69 @@ export default function App() {
           })()}
         </div>
 
+        {/* Show Graphs rounded rect button — on detector face, above viewer image */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 27 + devShowGraphsBtnX,
+            top: 222 + devShowGraphsBtnY,
+            width: 35, height: 32, borderRadius: 6,
+            background: showGraphs ? '#fe2b7180' : 'rgba(0,0,0,0)',
+            border: `2px solid ${showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.4)'}`,
+            boxShadow: showGraphs ? [
+              '0 0 12px 6px #fe2b71D9',
+              '0 0 30px 12px #fe2b7194',
+              '0 0 60px 20px #fe2b7162',
+            ].join(', ') : 'none',
+            zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
+            transition: 'background 0.15s, box-shadow 0.15s',
+          }}
+          onClick={() => setShowGraphs(g => !g)}
+        />
+
+        {/* Power button — glows when detector is on, click to hide */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 29 + devShowGraphsBtnX,
+            top: 362 + devShowGraphsBtnY,
+            width: 35, height: 32, borderRadius: 6,
+            background: showDetector ? '#f24a3880' : 'rgba(0,0,0,0)',
+            border: `1px solid ${showDetector ? '#f24a38' : 'rgba(242,74,56,0.4)'}`,
+            boxShadow: showDetector ? [
+              '0 0 12px 6px #f24a38D9',
+              '0 0 30px 12px #f24a3894',
+              '0 0 60px 20px #f24a3862',
+            ].join(', ') : 'none',
+            zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
+            transition: 'background 0.15s, box-shadow 0.15s',
+          }}
+          onClick={() => setShowDetector(d => !d)}
+        />
+        {/* ON label — directly below SHOW GRAPH text */}
+        <div style={{
+          position: 'absolute',
+          left: SCREEN_L + 14 + devShowGraphsX,
+          top: 364,
+          zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', height: 32,
+        }}
+          onClick={() => setShowDetector(d => !d)}>
+          <span style={{
+            fontFamily: '"Courier New", Courier, monospace',
+            fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+            color: showDetector ? '#f24a38' : 'rgba(242,74,56,0.6)',
+            textShadow: showDetector ? [
+              '0 0 2px #f24a38',
+              '0 0 8px #f24a38dd',
+              '0 0 18px #f24a3888',
+              '0 0 35px #f24a3844',
+            ].join(', ') : 'none',
+            filter: showDetector ? 'brightness(1.3) contrast(1.1)' : 'none',
+            userSelect: 'none',
+          }}>ON</span>
+        </div>
+
         {/* Device image — on top, transparent center reveals the screen behind */}
         <img src="images/viewer.png" draggable={false}
           style={{
@@ -1891,15 +1962,12 @@ export default function App() {
                   width:  BTN_R * 2 - 4,
                   height: BTN_R * 2 - 4,
                   borderRadius: '50%',
-                  background: isActive
-                    ? `radial-gradient(circle, #fff9 0%, ${b.divColor}ee 45%, ${b.btnActive} 100%)`
-                    : 'rgba(30,30,30,0.1)',
+                  background: isActive ? `${b.glowColor}80` : `rgba(0,0,0,0)`,
+                  transform: isActive ? 'scale(1)' : 'scale(1.05)',
                   boxShadow: isActive ? [
-                    `0 0 3px 1px #fff8`,
-                    `0 0 8px 3px ${b.divColor}`,
-                    `0 0 18px 6px ${b.divColor}cc`,
-                    `0 0 36px 10px ${b.divColor}77`,
-                    `0 0 60px 16px ${b.divColor}33`,
+                    `0 0 12px 6px ${b.glowColor}D9`,
+                    `0 0 30px 12px ${b.glowColor}94`,
+                    `0 0 60px 20px ${b.glowColor}62`,
                   ].join(', ') : 'none',
                   cursor: 'pointer',
                   zIndex: 10,
@@ -1916,6 +1984,7 @@ export default function App() {
         {(() => {
           const photoColor = '#a0b8a0';
           const photoBtnActive = '#607860';
+          const photoGlow = '#9df85c';
           const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
           return (
             <div>
@@ -1932,18 +2001,18 @@ export default function App() {
                 <span style={{
                   fontFamily: '"Courier New", Courier, monospace',
                   fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
-                  color: photoMode ? photoColor : 'rgba(255,255,255,0.28)',
+                  color: photoMode ? photoGlow : 'rgba(255,255,255,0.28)',
                   textShadow: photoMode ? [
-                    `0 0 2px ${photoColor}`,
-                    `0 0 8px ${photoColor}dd`,
-                    `0 0 18px ${photoColor}88`,
-                    `0 0 35px ${photoColor}44`,
+                    `0 0 2px ${photoGlow}`,
+                    `0 0 8px ${photoGlow}dd`,
+                    `0 0 18px ${photoGlow}88`,
+                    `0 0 35px ${photoGlow}44`,
                   ].join(', ') : 'none',
                   transition: 'color 0.12s, text-shadow 0.12s',
                   filter: photoMode ? 'brightness(1.3) contrast(1.1)' : 'none',
                   display: 'block',
                 }}>
-                  NONE
+                  CAM
                 </span>
               </div>
               <div
@@ -1954,15 +2023,12 @@ export default function App() {
                   width:  BTN_R * 2 - 4,
                   height: BTN_R * 2 - 4,
                   borderRadius: '50%',
-                  background: photoMode
-                    ? `radial-gradient(circle, #fff9 0%, ${photoColor}ee 45%, ${photoBtnActive} 100%)`
-                    : 'rgba(30,30,30,0.1)',
+                  background: photoMode ? `${photoGlow}80` : `rgba(0,0,0,0)`,
+                  transform: photoMode ? 'scale(1)' : 'scale(1.05)',
                   boxShadow: photoMode ? [
-                    `0 0 3px 1px #fff8`,
-                    `0 0 8px 3px ${photoColor}`,
-                    `0 0 18px 6px ${photoColor}cc`,
-                    `0 0 36px 10px ${photoColor}77`,
-                    `0 0 60px 16px ${photoColor}33`,
+                    `0 0 12px 6px ${photoGlow}D9`,
+                    `0 0 30px 12px ${photoGlow}94`,
+                    `0 0 60px 20px ${photoGlow}62`,
                   ].join(', ') : 'none',
                   cursor: 'pointer',
                   zIndex: 10,
