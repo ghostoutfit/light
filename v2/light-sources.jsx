@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // Perceptual sensitivity curve: zero slope at onset (never jarring), rapid rise, saturates near 1.
@@ -79,10 +79,10 @@ const SLIDER_CFG = {
     widthMin: 5,  widthMax: 300,
     peakDefault: 250, widthDefault: 200,
   },
-  tanbulb: {
-    peakMin: 700,  peakMax: 1500,
-    widthMin: 5,   widthMax: 200,
-    peakDefault: 800, widthDefault: 100, skewDefault: 1.0,
+  radiator: {
+    peakMin: 10,  peakMax: 35,
+    widthMin: 5,  widthMax: 300,
+    peakDefault: 10, widthDefault: 200, skewDefault: 7.0,
   },
   gel: {
     peakMin: 700,  peakMax: 1500,
@@ -92,12 +92,17 @@ const SLIDER_CFG = {
   remote: {
     peakMin: 20,  peakMax: 400,
     widthMin: 1,  widthMax: 50,
-    peakDefault: 40, widthDefault: 4, skewDefault: 1.0,
+    peakDefault: 40, widthDefault: 1.5, skewDefault: 1.0,
+  },
+  led: {
+    peakMin: 400, peakMax: 800,
+    widthMin: 5,  widthMax: 200,
+    peakDefault: 566, widthDefault: 80, skewDefault: 1.0,
   },
   xray: {
     peakMin: 5000, peakMax: 20000,
     widthMin: 200, widthMax: 8000,
-    peakDefault: 10000, widthDefault: 3000, skewDefault: 1.0,
+    peakDefault: 9700, widthDefault: 700, skewDefault: 1.0,
   },
   bulb: {
     peakMin: 400,  peakMax: 1200,
@@ -179,8 +184,15 @@ const VIS_LAYERS = [
 
 // ── Source catalogue ─────────────────────────────────────────
 const SOURCES = {
+  radiator: {
+    label: 'Radiator',
+    src:    'images/Radiator.png',
+    maskSrc:'images/HotRadiator.png',
+    w: 600, natW: 1254, natH: 1254,
+    group: 'hot',
+  },
   range: {
-    label: 'Electric Range',
+    label: 'Electric Cooker',
     src:   'images/Heater.png',
     maskSrc: 'images/HeaterElement.png',
     w: 330, natW: 732, natH: 560,
@@ -194,21 +206,21 @@ const SOURCES = {
     w: 170, natW: 324, natH: 453,
     group: 'hot',
   },
-  tanbulb: {
-    label: 'Blacklight',
-    src:   'images/Tanbulb.png',
-    maskSrc: 'images/TanbulbElement.png',
-    w: 357, natW: 737, natH: 409,
-    group: 'specialized',
-  },
   gel: {
-    label: 'Gel Lamp',
+    label: 'UV LED',
     src:         'images/GelFlatBaseGray.png',
     outsideSrc:  'images/GelGlowWhite.png',   // diffuse dome glow (bench)
     filamentSrc: 'images/GelGlowDots.png',    // LED dots (bench)
     fieldSrc:    'images/GelGlowGray.png',    // mid-field pinkish glow around dots (bench)
     maskSrc:     'images/GelGlowDots.png',    // used by detector (EmissionShape)
     w: 336, natW: 1254, natH: 1254,
+    group: 'specialized',
+  },
+  led: {
+    label: 'LED Bulb',
+    src:     'images/LEDBulb.png',
+    maskSrc: 'images/LEDBulbGlow.png',
+    w: 180, natW: 1053, natH: 1493,
     group: 'specialized',
   },
   remote: {
@@ -219,7 +231,7 @@ const SOURCES = {
     group: 'specialized',
   },
   xray: {
-    label: 'X-Ray Emitter',
+    label: 'X Ray Source',
     src:          'images/XRayEmitter.png',
     sourceSrc:    'images/XRaySource.png',
     reflectorSrc: 'images/XRayReflector.png',
@@ -455,6 +467,45 @@ function EmissionShape({ item, band, intensity, dev }) {
       );
     }
 
+    if (item.type === 'led' && s.maskSrc) {
+      const ledI = clamp(intensity * 5, 0, 1);
+      if (ledI <= 0.01) return null;
+      const mX = dev.maskX[item.type] + (item.glowX ?? 0);
+      const mY = dev.maskY[item.type] + (item.glowY ?? 0);
+      const ledLayer = (blur, color, op) => (
+        <div style={{
+          position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+          filter: `blur(${blur}px)`, opacity: op, mixBlendMode: 'normal', pointerEvents: 'none',
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, backgroundColor: color,
+            maskImage: `url(${s.maskSrc})`, WebkitMaskImage: `url(${s.maskSrc})`,
+            maskMode: 'luminance', maskSize: '100% 100%', WebkitMaskSize: '100% 100%',
+          }} />
+        </div>
+      );
+      const ll = item.ledLayers ?? [
+        { on: true, opacity: 0.85 }, { on: true, opacity: 1.0 },
+        { on: true, opacity: 0.85 }, { on: true, opacity: 0.9 },
+      ];
+      // Use screen blend + saturate(0) to guarantee white regardless of image tint
+      const camLayer = (blur, brightness, op) => (
+        <img src={s.maskSrc} draggable={false}
+          style={{
+            position: 'absolute', top: mY, left: mX, width: s.w, height: imgH,
+            filter: `saturate(0) brightness(${brightness}) blur(${blur}px)`,
+            opacity: op, mixBlendMode: 'screen', pointerEvents: 'none',
+          }} />
+      );
+      return (
+        <div className="absolute pointer-events-none"
+          style={{ left: item.x, top: item.y, width: s.w, height: imgH }}>
+          {ll[2].on && camLayer(32, 3, ledI * ll[2].opacity)}
+          {ll[3].on && camLayer(3,  6, ledI * ll[3].opacity)}
+        </div>
+      );
+    }
+
     if (s.maskSrc) {
       return (
         <div className="absolute pointer-events-none"
@@ -483,7 +534,7 @@ function EmissionShape({ item, band, intensity, dev }) {
     return null;
   }
 
-  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : band.id === 'XRay' ? intensity * 2 : intensity);
+  const ic    = visCurve(band.id === 'UV' ? intensity * 2 : band.id === 'XRay' ? intensity * 4 : intensity);
   const sharp = clamp(1 + ic * 4, 1, 5);
   const bloom = clamp(1 + ic * 5, 1, 6);
   const blurD = (2  + ic * 8)  * dev.blurScale;
@@ -850,6 +901,9 @@ export default function App() {
   const [viewerPos, setViewerPos] = useState({ x: 40, y: 80 });
   const [viewerDrag, setViewerDrag] = useState(null); // { ox, oy }
   const [showDetector, setShowDetector] = useState(false);
+  const [graphItemId,  setGraphItemId]  = useState(null);
+  const graphItemIdRef = useRef(null);
+  graphItemIdRef.current = graphItemId;
 
   // Viewer layout constants (image is 1024×1024)
   const VIEWER_W = 630;
@@ -867,15 +921,15 @@ export default function App() {
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 22, bulbFilamentBlur: 1,
     bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
-    maskX: { range: -11, tanbulb: -9, bulb: 0, xray: 0, gel: 0, remote: 0 },
-    maskY: { range: -25, tanbulb: -5, bulb: 2, xray: 0, gel: 0, remote: 0 },
-    benchX: { range: -12, tanbulb: 2, bulb: 0, xray: 0, gel: 0, remote: 0 },
-    benchY: { range: -26, tanbulb: -10, bulb: 0, xray: 0, gel: 0, remote: 0 },
-    visOpacity: { range: 5.0,  tanbulb: 5.0,  bulb: 5.0,  xray: 1.0, gel: 5.0,  remote: 0 },
-    visHue:     { range: -8,   tanbulb: -75,  bulb: 0,    xray: 0,   gel: -88,  remote: 0 },
-    visBlur:    { range: 3.0,  tanbulb: 4.0,  bulb: 3.0,  xray: 1.0, gel: 4.5,  remote: 1.0 },
-    visSat:     { range: 5.0,  tanbulb: 20.0, bulb: 8.0,  xray: 1.0, gel: 28.0, remote: 1.0 },
-    visBright:  { range: 1.0,  tanbulb: 1.0,  bulb: 1.0,  xray: 1.0, gel: 1.0,  remote: 1.0 } };
+    maskX: { range: -11, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
+    maskY: { range: -25, bulb: 2, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
+    benchX: { range: -12, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
+    benchY: { range: -26, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
+    visOpacity: { range: 5.0, bulb: 5.0,  xray: 1.0, gel: 5.0,  remote: 0, radiator: 0, led: 5.0 },
+    visHue:     { range: -8,  bulb: 0,    xray: 0,   gel: -88,  remote: 0, radiator: 0, led: 0 },
+    visBlur:    { range: 3.0, bulb: 3.0,  xray: 1.0, gel: 4.5,  remote: 1.0, radiator: 1.0, led: 3.0 },
+    visSat:     { range: 5.0, bulb: 8.0,  xray: 1.0, gel: 28.0, remote: 1.0, radiator: 1.0, led: 5.0 },
+    visBright:  { range: 1.0, bulb: 1.0,  xray: 1.0, gel: 1.0,  remote: 1.0, radiator: 1.0, led: 1.0 } };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
@@ -892,6 +946,43 @@ export default function App() {
 
   const band = bandRanges.find(b => b.id === selectedBand);
 
+  // ── Graph-in-detector: which item's graph to show ─────────────
+  useEffect(() => {
+    if (!showGraphs || !showDetector || items.length === 0) {
+      if (graphItemIdRef.current !== null) setGraphItemId(null);
+      return;
+    }
+    const screenLeft   = viewerPos.x + SCREEN_L;
+    const screenTop    = viewerPos.y + SCREEN_T - BENCH_TOP;
+    const screenRight  = screenLeft + SCREEN_W;
+    const screenBottom = screenTop  + SCREEN_H;
+    const screenArea   = SCREEN_W * SCREEN_H;
+
+    const qualifying = [];
+    for (const item of items) {
+      const s = SOURCES[item.type];
+      const imgH = s.w * (s.natH / s.natW);
+      const ix1 = Math.max(item.x, screenLeft);
+      const ix2 = Math.min(item.x + s.w, screenRight);
+      const iy1 = Math.max(item.y, screenTop);
+      const iy2 = Math.min(item.y + imgH, screenBottom);
+      if (ix2 <= ix1 || iy2 <= iy1) continue;
+      const intersection = (ix2 - ix1) * (iy2 - iy1);
+      const passes = item.type === 'radiator'
+        ? intersection / screenArea >= 1 / 3
+        : intersection / (s.w * imgH) >= 0.5;
+      if (passes) qualifying.push({ id: item.id, intersection });
+    }
+
+    if (qualifying.length === 0) {
+      if (graphItemIdRef.current !== null) setGraphItemId(null);
+      return;
+    }
+    if (qualifying.some(q => q.id === graphItemIdRef.current)) return; // keep current
+    const best = qualifying.reduce((a, b) => a.intersection > b.intersection ? a : b);
+    setGraphItemId(best.id);
+  }, [showGraphs, showDetector, items, viewerPos]);
+
   const benchRef = useRef(null);
   const partsRef = useRef(null);
 
@@ -904,6 +995,7 @@ export default function App() {
     setDrag({
       from: 'parts', type, id: null,
       cx: e.clientX, cy: e.clientY,
+      sx: e.clientX, sy: e.clientY,
       ox: s.w / 2,
       oy: s.w * (s.natH / s.natW) * 0.38,
     });
@@ -968,6 +1060,9 @@ export default function App() {
       const x = e.clientX - br.left - drag.ox;
       const y = e.clientY - br.top  - drag.oy;
       if (drag.from === 'parts') {
+        // Require a real drag — ignore clicks or tiny movements
+        const moved = Math.abs(e.clientX - drag.sx) > 40 || Math.abs(e.clientY - drag.sy) > 40;
+        if (!moved) { setDrag(null); return; }
         // New drop — only accept if pointer lands inside bench
         if (e.clientX >= br.left && e.clientX <= br.right &&
             e.clientY >= br.top  && e.clientY <= br.bottom) {
@@ -987,6 +1082,12 @@ export default function App() {
                 { on: true, opMult: 1.35 },  // 2 dots-W
                 { on: true, opMult: 1.35, hue: 310, lightness: 75 },  // 3 neon-1
                 { on: true, opMult: 0.9  },  // 4 neon-2
+              ] } : {}),
+              ...(drag.type === 'led' ? { ledLayers: [
+                { on: true, opacity: 0.85 },  // 0 bench bloom
+                { on: true, opacity: 1.0  },  // 1 bench sharp
+                { on: true, opacity: 0.85 },  // 2 cam bloom
+                { on: true, opacity: 0.9  },  // 3 cam sharp
               ] } : {}),
             }];
           });
@@ -1067,8 +1168,9 @@ export default function App() {
       ══════════════════════════════════════════ */}
       <div className="relative flex-1" ref={benchRef} style={{ marginTop: 30 }}>
         <img src={`images/Table.PNG?v=${Date.now()}`}
-          className="absolute left-0 w-full pointer-events-none"
-          style={{ height: 'auto', top: -55, width: '100%' }}
+          className="absolute pointer-events-none"
+          style={{ top: -55, right: 0, left: 0, width: '100%', height: 'calc(100% + 55px)',
+                   objectFit: 'cover', objectPosition: 'right center' }}
           draggable={false} />
 
         {/* Parts box */}
@@ -1080,44 +1182,53 @@ export default function App() {
             background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)',
             borderColor: benchDragging ? 'rgba(255,90,60,0.5)' : 'rgba(255,255,255,0.18)',
           }}>
-          {/* Hot Sources */}
-          <p className="text-orange-400/70 text-[9px] font-bold uppercase tracking-[0.15em] text-center">
-            Hot Sources
-          </p>
-          {Object.entries(SOURCES).filter(([, s]) => s.group === 'hot').map(([type, s]) => (
-            <div key={type}
-              className="flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
-              onPointerDown={(e) => startPartsDrag(e, type)}>
-              <img src={s.src} alt={s.label} style={{ width: 66 }}
-                className="drop-shadow pointer-events-none" draggable={false} />
-              <span className="text-white/40 text-[8px] leading-tight text-center">
-                {s.label}
-              </span>
-            </div>
-          ))}
-          {/* Divider */}
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.10)', margin: '2px 0' }} />
-          {/* Specialized Sources */}
-          <p className="text-blue-400/70 text-[9px] font-bold uppercase tracking-[0.15em] text-center">
-            Specialized
-          </p>
-          {Object.entries(SOURCES).filter(([, s]) => s.group === 'specialized').map(([type, s]) => (
-            <div key={type}
-              className="flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
-              onPointerDown={(e) => startPartsDrag(e, type)}>
-              <img src={s.src} alt={s.label} style={{ width: 66 }}
-                className="drop-shadow pointer-events-none" draggable={false} />
-              <span className="text-white/40 text-[8px] leading-tight text-center">
-                {s.label}
-              </span>
-            </div>
-          ))}
+          {/* Source group renderer */}
+          {[
+            { label: 'Heat Sources', color: 'rgba(251,146,60,0.7)', group: 'hot' },
+            { label: 'Other Sources', color: 'rgba(96,165,250,0.7)', group: 'specialized' },
+          ].map(({ label, color, group }) => {
+            const groupSources = Object.entries(SOURCES).filter(([, s]) => s.group === group);
+            return (
+              <div key={group}>
+                <p style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color, textAlign: 'left', marginBottom: 4 }}>
+                  {label}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {groupSources.map(([type, s]) => {
+                    const placed = items.some(it => it.type === type);
+                    return (
+                      <div key={type}
+                        className="touch-none"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          opacity: placed ? 0.38 : 1,
+                          cursor: placed ? 'default' : 'grab',
+                          padding: '3px 4px',
+                          borderRadius: 6,
+                          background: placed ? 'rgba(255,255,255,0.04)' : 'transparent',
+                        }}
+                        onPointerDown={placed ? undefined : (e) => startPartsDrag(e, type)}>
+                        <img src={s.src} alt={s.label} draggable={false}
+                          className="drop-shadow pointer-events-none"
+                          style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0 }} />
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, flex: 1 }}>
+                          {s.label}
+                        </span>
+                        {placed && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0 4px' }} />
+              </div>
+            );
+          })}
           <p className="text-white/20 text-[7px] text-center mt-0.5">drag back to remove</p>
         </div>
 
         {/* Bench items — sliders above */}
         {items.map(item => {
-          if (drag?.from === 'bench' && drag.id === item.id) return null;
+          const isBeingDragged = drag?.from === 'bench' && drag.id === item.id;
           const s    = SOURCES[item.type];
           const imgH = s.w * (s.natH / s.natW);
 
@@ -1147,7 +1258,7 @@ export default function App() {
           return (
             <div key={item.id} className="absolute touch-none"
               style={{ left: item.x, top: item.y, width: s.w }}>
-              <div
+              {!isBeingDragged && <div
                 className="absolute rounded-lg px-2 py-2 flex flex-col gap-1.5
                            border border-white/10 backdrop-blur-sm"
                 style={{
@@ -1214,8 +1325,8 @@ export default function App() {
                         {item.skew.toFixed(1)}
                       </span>
                     </div>
-                    {/* Glow X/Y offset sliders */}
-                    <div className="flex items-center gap-1.5">
+                    {/* Glow X/Y offset sliders — hidden for LED (glow covers full image) */}
+                    {item.type !== 'led' && <div className="flex items-center gap-1.5">
                       <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Glow X</span>
                       <input type="range" min="-80" max="80" value={item.glowX ?? 0}
                         className="flex-1 cursor-pointer accent-cyan-400" style={{ height: '3px' }}
@@ -1223,8 +1334,8 @@ export default function App() {
                       <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
                         {item.glowX ?? 0}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
+                    </div>}
+                    {item.type !== 'led' && <div className="flex items-center gap-1.5">
                       <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Glow Y</span>
                       <input type="range" min="-80" max="80" value={item.glowY ?? 0}
                         className="flex-1 cursor-pointer accent-cyan-400" style={{ height: '3px' }}
@@ -1232,7 +1343,7 @@ export default function App() {
                       <span className="text-[7px] text-zinc-500 w-7 text-right tabular-nums shrink-0">
                         {item.glowY ?? 0}
                       </span>
-                    </div>
+                    </div>}
                     {item.type === 'gel' && item.gelBenchLayers && (() => {
                       const labels = ['dome-T','field','dots-W','neon-1','neon-2'];
                       const upd = (i, patch) => {
@@ -1284,17 +1395,48 @@ export default function App() {
                         </div>
                       );
                     })()}
+                    {item.type === 'led' && item.ledLayers && (() => {
+                      const labels = ['bench bloom', 'bench sharp', 'cam bloom', 'cam sharp'];
+                      const upd = (i, patch) => {
+                        const next = item.ledLayers.map((l, j) => j === i ? { ...l, ...patch } : l);
+                        updateItem(item.id, { ledLayers: next });
+                      };
+                      return (
+                        <div style={{ marginTop: 3 }}>
+                          {labels.map((lbl, i) => {
+                            const layer = item.ledLayers[i];
+                            return (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                                <input type="checkbox" checked={layer.on}
+                                  style={{ width: 10, height: 10, accentColor: '#fbbf24', flexShrink: 0, cursor: 'pointer' }}
+                                  onChange={e => upd(i, { on: e.target.checked })} />
+                                <span style={{ fontSize: 7, fontFamily: 'monospace', width: 52, flexShrink: 0,
+                                  color: layer.on ? '#a1a1aa' : '#52525b' }}>{lbl}</span>
+                                <input type="range" min="0" max="200" step="5" value={Math.round(layer.opacity * 100)}
+                                  disabled={!layer.on}
+                                  style={{ flex: 1, height: 3, cursor: 'pointer', accentColor: '#fbbf24' }}
+                                  onChange={e => upd(i, { opacity: +e.target.value / 100 })} />
+                                <span style={{ fontSize: 7, fontFamily: 'monospace', width: 28, textAlign: 'right',
+                                  flexShrink: 0, color: '#71717a' }}>{layer.opacity.toFixed(2)}×</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Power</span>
-                    <input type="range" min="0" max="500" value={item.amplitude}
+                    <input type="range" min="0" max={item.type === 'radiator' ? 120 : 500} value={item.amplitude}
                       className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
                       onChange={e => {
                         const v = +e.target.value;
-                        const t = v / 500;
+                        const t = item.type === 'radiator' ? v / 120 : v / 500;
                         if (item.type === 'range') {
                           updateItem(item.id, { amplitude: v, peak: Math.round(50 + t * 190) });
+                        } else if (item.type === 'radiator') {
+                          updateItem(item.id, { amplitude: v, peak: Math.round(10 + t * 25) });
                         } else if (item.type === 'bulb') {
                           updateItem(item.id, { amplitude: v, peak: Math.round(200 + t * 380) });
                         } else {
@@ -1303,7 +1445,7 @@ export default function App() {
                       }} />
                   </div>
                 )}
-              </div>
+              </div>}
               {/* Item image + visible-light glow overlay */}
               <div style={{ position: 'relative', width: s.w, height: imgH }}>
                 <img src={s.src} alt={s.label}
@@ -1393,7 +1535,7 @@ export default function App() {
                   </>);
                 })()}
 
-                {s.maskSrc && item.type !== 'gel' && visIntensity > 0.005 && (
+                {s.maskSrc && item.type !== 'gel' && item.type !== 'led' && visIntensity > 0.005 && (
                     <>
                       {/* Bloom — wide soft layer */}
                       <div style={{
@@ -1429,6 +1571,30 @@ export default function App() {
                       </div>
                     </>
                   )}
+                {/* LED bench glow — luminance-mask solid color, controlled by ledLayers[0/1] */}
+                {item.type === 'led' && s.maskSrc && visIntensity > 0.005 && (() => {
+                  const ll = item.ledLayers ?? [
+                    { on: true, opacity: 0.85 }, { on: true, opacity: 1.0 },
+                    { on: true, opacity: 0.85 }, { on: true, opacity: 0.9 },
+                  ];
+                  const ledBenchLayer = (blur, color, op) => (
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0, width: s.w, height: imgH,
+                      filter: `blur(${blur}px)`, opacity: op, mixBlendMode: 'normal', pointerEvents: 'none',
+                    }}>
+                      <div style={{
+                        position: 'absolute', inset: 0, backgroundColor: color,
+                        maskImage: `url(${s.maskSrc})`, WebkitMaskImage: `url(${s.maskSrc})`,
+                        maskMode: 'luminance', maskSize: '100% 100%', WebkitMaskSize: '100% 100%',
+                      }} />
+                    </div>
+                  );
+                  const ledI = clamp(visC * dev.visOpacity[item.type], 0, 1);
+                  return (<>
+                    {ll[0].on && ledBenchLayer(32, '#ffe566', ledI * ll[0].opacity)}
+                    {ll[1].on && ledBenchLayer(3,  '#fff5aa', ledI * ll[1].opacity)}
+                  </>);
+                })()}
               </div>
               {/* Graph on bench — visible in dev mode with Show Graphs, regardless of detector */}
               {devMode && showGraphs && (() => {
@@ -1501,10 +1667,12 @@ export default function App() {
             backgroundSize: '100% 3px',
           }} />
 
-          {/* Mode title — hidden in NONE mode */}
-          {!photoMode && (() => {
+          {/* Mode title — always shown, including CAMERA MODE in None */}
+          {(() => {
             const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
-            const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
+            const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#aa22ff', XRay: '#44aaff' };
+            const title = photoMode ? 'CAMERA MODE' : titleMap[selectedBand];
+            const color = photoMode ? '#22d3ee' : colorMap[selectedBand];
             return (
               <div style={{
                 position: 'absolute', top: 35, left: 0, right: 0,
@@ -1515,88 +1683,75 @@ export default function App() {
                   <span style={{
                     fontFamily: '"Courier New", Courier, monospace',
                     fontSize: 26, fontWeight: 'bold', letterSpacing: '0.18em',
-                    color: colorMap[selectedBand],
+                    color,
                     textShadow: [
-                      `0 0 2px ${colorMap[selectedBand]}`,
-                      `0 0 8px ${colorMap[selectedBand]}dd`,
-                      `0 0 18px ${colorMap[selectedBand]}99`,
-                      `0 0 40px ${colorMap[selectedBand]}55`,
+                      `0 0 2px ${color}`,
+                      `0 0 8px ${color}dd`,
+                      `0 0 18px ${color}99`,
+                      `0 0 40px ${color}55`,
                     ].join(', '),
                     userSelect: 'none', display: 'block',
                     filter: 'brightness(1.3) contrast(1.1)',
                   }}>
-                    {titleMap[selectedBand]}
+                    {title}
                   </span>
-                  {/* Scanlines over the text */}
-                  <div style={{
+                  {/* Scanlines over the text — hidden in Camera mode (transparent screen) */}
+                  {!photoMode && <div style={{
                     position: 'absolute', inset: 0, pointerEvents: 'none',
                     backgroundImage: 'repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.22) 2px, rgba(0,0,0,0.22) 3px)',
                     backgroundSize: '100% 3px',
-                  }} />
+                  }} />}
                 </div>
               </div>
             );
           })()}
 
-          {items.length === 0 && !photoMode ? (
+          {/* None mode — screen is transparent; bench shows through physically. No content needed. */}
+          {!photoMode && (items.length === 0 ? (
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               height: '100%', textAlign: 'center', padding: 12,
-              color: '#3f3f46',
-              fontSize: 10, lineHeight: 1.4,
+              color: '#3f3f46', fontSize: 10, lineHeight: 1.4,
             }}>
               Place a light source on the bench.
             </div>
           ) : (
-            /* Content is translated so bench-relative item coords map through the viewer screen */
+            /* Spectrum mode — translate bench coords into detector viewport */
             <div style={{
               position: 'absolute',
               left: -(viewerPos.x + SCREEN_L),
               top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
             }}>
-              {/* Table background — visible in NONE mode */}
-              {photoMode && (
-                <img src="images/Table.PNG" draggable={false}
-                  style={{ position: 'absolute', left: 0, top: -55, width: '100vw', pointerEvents: 'none' }} />
-              )}
               {items.map(item => {
                 const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
                                 * (item.amplitude / 400);
                 const s = SOURCES[item.type];
-                const panelW = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
-                const panelOff = Math.round((s.w - panelW) / 2);
                 return (
                   <React.Fragment key={item.id}>
-                    {photoMode
-                      ? <NaturalView item={item} dev={dev} bandRanges={bandRanges} />
-                      : <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
-                    }}
-                    {showGraphs && (() => {
-                      const graphW = (item.type === 'bulb' || item.type === 'xray')
-                        ? Math.round(panelW * 1.4) : panelW;
-                      const graphLeft = item.x + Math.round((s.w - graphW) / 2);
-                      return (
-                        <div style={{
-                          position: 'absolute',
-                          left: graphLeft,
-                          top: item.y - 55,
-                          width: graphW,
-                          pointerEvents: 'none',
-                          zIndex: 20,
-                          background: photoMode ? 'rgba(255,255,255,0.82)' : 'transparent',
-                          borderRadius: photoMode ? 4 : 0,
-                          paddingTop: 35,
-                        }}>
-                          <EmissionGraph item={item} bandRanges={bandRanges} width={graphW}
-                            devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
-                        </div>
-                      );
-                    })()}
+                    <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
                   </React.Fragment>
                 );
               })}
             </div>
-          )}
+          ))}
+
+          {/* Graph overlay — below mode title (top ~75px) */}
+          {showGraphs && graphItemId && (() => {
+            const item = items.find(it => it.id === graphItemId);
+            if (!item) return null;
+            return (
+              <div style={{
+                position: 'absolute', left: 30, top: 72, width: SCREEN_W - 70,
+                paddingTop: 35, // offsets EmissionGraph's internal marginTop:-35 so background fills correctly
+                pointerEvents: 'none', zIndex: 15,
+                background: photoMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.65)',
+                borderBottom: photoMode ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.12)',
+              }}>
+                <EmissionGraph item={item} bandRanges={bandRanges} width={SCREEN_W - 70}
+                  devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
+              </div>
+            );
+          })()}
         </div>
 
         {/* Device image — on top, transparent center reveals the screen behind */}
