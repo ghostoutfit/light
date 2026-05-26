@@ -896,6 +896,15 @@ export default function App() {
   const [devBlurScale,        setDevBlurScale]        = useState(0.08);
   const [devBulbVisBright,    setDevBulbVisBright]    = useState(20.0);
   const [devBulbCamMax,       setDevBulbCamMax]       = useState(0.6);
+  const [devBtnX,             setDevBtnX]             = useState(0);
+  const [devBtnY,             setDevBtnY]             = useState(0);
+  const [devScreenX,          setDevScreenX]          = useState(0);
+  const [devScreenY,          setDevScreenY]          = useState(0);
+  const [devBtnYVis,          setDevBtnYVis]          = useState(0);
+  const [devBtnYUV,           setDevBtnYUV]           = useState(0);
+  const [devBtnYXRay,         setDevBtnYXRay]         = useState(0);
+  const [devBtnYPhoto,        setDevBtnYPhoto]        = useState(0);
+  // Baked: BTN_CX base +73, CYS [258,306,351,402,449]
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
   const [viewerPos, setViewerPos] = useState({ x: 40, y: 80 });
@@ -905,18 +914,25 @@ export default function App() {
   const graphItemIdRef = useRef(null);
   graphItemIdRef.current = graphItemId;
 
-  // Viewer layout constants (image is 1024×1024)
-  const VIEWER_W = 630;
-  const VS = VIEWER_W / 1024; // scale factor
-  const SCREEN_L = 78;
-  const SCREEN_T = 60;
-  const SCREEN_W = Math.round(783 * VS);
+  // Viewer layout constants (image is 1224×1024)
+  const VIEWER_H = 630;
+  const VIEWER_W = Math.round(VIEWER_H * 1224 / 1024); // ≈ 752
+  const VS = VIEWER_H / 1024; // scale factor based on height
+  const SCREEN_L = 68 + devScreenX;
+  const SCREEN_T = 74 + devScreenY;
+  const SCREEN_W = Math.round(783 * VS) + 60;
   const SCREEN_H = 495;
   const BENCH_TOP = 30; // bench marginTop in px
   // 4 circular band buttons — positions fine-tuned to the panel image
-  const BTN_CX  = Math.round(882 * VS) - 13;           // -13 x offset
+  const BTN_CX  = Math.round(882 * VS) + 73 + devBtnX;
   const BTN_R   = Math.round(28  * VS);
-  const BTN_CYS = [196+12, 248-1, 300-4, 353-6, 406];   // IR, Vis, UV, XRay, Photo
+  const BTN_CYS = [
+    258 + devBtnY,
+    306 + devBtnY + devBtnYVis,
+    351 + devBtnY + devBtnYUV,
+    402 + devBtnY + devBtnYXRay,
+    449 + devBtnY + devBtnYPhoto,
+  ];
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 22, bulbFilamentBlur: 1,
@@ -1039,7 +1055,15 @@ export default function App() {
       });
       return;
     }
-    if (drag) setDrag(d => ({ ...d, cx: e.clientX, cy: e.clientY }));
+    if (drag) {
+      setDrag(d => ({ ...d, cx: e.clientX, cy: e.clientY }));
+      if (drag.from === 'bench' && benchRef.current) {
+        const br = benchRef.current.getBoundingClientRect();
+        const x = e.clientX - br.left - drag.ox;
+        const y = e.clientY - br.top  - drag.oy;
+        setItems(prev => prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
+      }
+    }
   };
 
   const onUp = (e) => {
@@ -1059,6 +1083,15 @@ export default function App() {
       const br = benchRef.current.getBoundingClientRect();
       const x = e.clientX - br.left - drag.ox;
       const y = e.clientY - br.top  - drag.oy;
+      if (drag.from === 'parts' && drag.type === 'viewer') {
+        const moved = Math.abs(e.clientX - drag.sx) > 40 || Math.abs(e.clientY - drag.sy) > 40;
+        if (moved) {
+          setViewerPos({ x: e.clientX - drag.ox, y: e.clientY - drag.oy });
+          setShowDetector(true);
+        }
+        setDrag(null);
+        return;
+      }
       if (drag.from === 'parts') {
         // Require a real drag — ignore clicks or tiny movements
         const moved = Math.abs(e.clientX - drag.sx) > 40 || Math.abs(e.clientY - drag.sy) > 40;
@@ -1093,12 +1126,7 @@ export default function App() {
           });
         }
       } else {
-        // Repositioning — only if actually dragged (not just clicked)
-        const moved = Math.abs(e.clientX - drag.sx) > 5 || Math.abs(e.clientY - drag.sy) > 5;
-        if (moved) {
-          setItems(prev =>
-            prev.map(it => it.id === drag.id ? { ...it, x, y } : it));
-        }
+        // Position already updated live in onMove; nothing more to do
       }
     }
     setDrag(null);
@@ -1146,20 +1174,6 @@ export default function App() {
             Show Graphs
           </label>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <input
-            id="showDetector"
-            type="checkbox"
-            checked={showDetector}
-            onChange={e => setShowDetector(e.target.checked)}
-            style={{ accentColor: '#22d3ee', width: 22, height: 22, cursor: 'pointer' }}
-          />
-          <label htmlFor="showDetector" style={{
-            fontSize: 18, color: 'black', cursor: 'pointer', userSelect: 'none',
-          }}>
-            Show Detector
-          </label>
-        </div>
       </div>
 
 
@@ -1182,6 +1196,46 @@ export default function App() {
             background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)',
             borderColor: benchDragging ? 'rgba(255,90,60,0.5)' : 'rgba(255,255,255,0.18)',
           }}>
+          {/* Detector card */}
+          {(() => {
+            const placed = showDetector;
+            return (
+              <div>
+                <p style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.7)', textAlign: 'left', marginBottom: 4 }}>
+                  Detector
+                </p>
+                <div
+                  className="touch-none"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    opacity: placed ? 0.38 : 1,
+                    cursor: placed ? 'default' : 'grab',
+                    padding: '3px 4px',
+                    borderRadius: 6,
+                    background: placed ? 'rgba(255,255,255,0.04)' : 'transparent',
+                  }}
+                  onPointerDown={placed ? undefined : e => {
+                    e.preventDefault();
+                    setDrag({
+                      from: 'parts', type: 'viewer', id: null,
+                      cx: e.clientX, cy: e.clientY,
+                      sx: e.clientX, sy: e.clientY,
+                      ox: VIEWER_W / 2,
+                      oy: VIEWER_H * 0.1,
+                    });
+                  }}>
+                  <img src="images/viewer.png" alt="Detector" draggable={false}
+                    className="drop-shadow pointer-events-none"
+                    style={{ width: Math.round(40 * 1224 / 1024), height: 40, objectFit: 'contain', flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, flex: 1 }}>
+                    Radiation Detector
+                  </span>
+                  {placed && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>✓</span>}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Source group renderer */}
           {[
             { label: 'Heat Sources', color: 'rgba(251,146,60,0.7)', group: 'hot' },
@@ -1648,6 +1702,22 @@ export default function App() {
             value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
           <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
             value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
+          <DevSlider label="Screen X" min={-300} max={300} step={1}
+            value={devScreenX} onChange={setDevScreenX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Screen Y" min={-300} max={300} step={1}
+            value={devScreenY} onChange={setDevScreenY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Btn X" min={-200} max={200} step={1}
+            value={devBtnX} onChange={setDevBtnX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Btn Y (all)" min={-200} max={200} step={1}
+            value={devBtnY} onChange={setDevBtnY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Vis Y" min={-100} max={100} step={1}
+            value={devBtnYVis} onChange={setDevBtnYVis} fmt={v => v.toFixed(0)} />
+          <DevSlider label="UV Y" min={-100} max={100} step={1}
+            value={devBtnYUV} onChange={setDevBtnYUV} fmt={v => v.toFixed(0)} />
+          <DevSlider label="XRay Y" min={-100} max={100} step={1}
+            value={devBtnYXRay} onChange={setDevBtnYXRay} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Photo Y" min={-100} max={100} step={1}
+            value={devBtnYPhoto} onChange={setDevBtnYPhoto} fmt={v => v.toFixed(0)} />
         </div>
       )}
 
@@ -1657,7 +1727,7 @@ export default function App() {
       {showDetector && <div
         style={{
           position: 'fixed', left: viewerPos.x, top: viewerPos.y,
-          width: VIEWER_W, height: VIEWER_W,
+          width: VIEWER_W, height: VIEWER_H,
           zIndex: 60, touchAction: 'none',
           cursor: viewerDrag ? 'grabbing' : 'grab',
         }}
@@ -1772,7 +1842,7 @@ export default function App() {
         <img src="images/viewer.png" draggable={false}
           style={{
             position: 'absolute', inset: 0,
-            width: VIEWER_W, height: VIEWER_W,
+            width: VIEWER_W, height: VIEWER_H,
             userSelect: 'none', pointerEvents: 'none',
             zIndex: 2,
           }} />
@@ -1823,7 +1893,7 @@ export default function App() {
                   borderRadius: '50%',
                   background: isActive
                     ? `radial-gradient(circle, #fff9 0%, ${b.divColor}ee 45%, ${b.btnActive} 100%)`
-                    : 'rgba(30,30,30,0.5)',
+                    : 'rgba(30,30,30,0.1)',
                   boxShadow: isActive ? [
                     `0 0 3px 1px #fff8`,
                     `0 0 8px 3px ${b.divColor}`,
@@ -1886,7 +1956,7 @@ export default function App() {
                   borderRadius: '50%',
                   background: photoMode
                     ? `radial-gradient(circle, #fff9 0%, ${photoColor}ee 45%, ${photoBtnActive} 100%)`
-                    : 'rgba(30,30,30,0.5)',
+                    : 'rgba(30,30,30,0.1)',
                   boxShadow: photoMode ? [
                     `0 0 3px 1px #fff8`,
                     `0 0 8px 3px ${photoColor}`,
@@ -1907,14 +1977,20 @@ export default function App() {
 
       </div>}
 
-      {/* Global drag ghost */}
-      {drag && (
-        <div className="fixed pointer-events-none z-50"
-          style={{ left: drag.cx - drag.ox, top: drag.cy - drag.oy, width: SOURCES[drag.type].w }}>
-          <img src={SOURCES[drag.type].src} style={{ width: SOURCES[drag.type].w }}
-            className="opacity-90" draggable={false} />
-        </div>
-      )}
+      {/* Global drag ghost — only for drags from the parts panel */}
+      {drag && drag.from !== 'bench' && (() => {
+        const isViewer = drag.type === 'viewer';
+        const w = isViewer ? VIEWER_W : SOURCES[drag.type].w;
+        const h = isViewer ? VIEWER_H : undefined;
+        const src = isViewer ? 'images/viewer.png' : SOURCES[drag.type].src;
+        return (
+          <div className="fixed pointer-events-none z-50"
+            style={{ left: drag.cx - drag.ox, top: drag.cy - drag.oy, width: w, height: h }}>
+            <img src={src} style={{ width: w, height: h }}
+              className="opacity-90" draggable={false} />
+          </div>
+        );
+      })()}
     </div>
   );
 }
