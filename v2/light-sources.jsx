@@ -1910,7 +1910,7 @@ export default function App() {
         </div>
 
         {/* Device image — on top, transparent center reveals the screen behind */}
-        <img src={`images/viewer.png?v=${Date.now()}`} draggable={false}
+        <img src="images/viewer.png" draggable={false}
           style={{
             position: 'absolute', inset: 0,
             width: VIEWER_W, height: VIEWER_H,
