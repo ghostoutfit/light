@@ -188,7 +188,7 @@ const SOURCES = {
     label: 'Radiator',
     src:    'images/Radiator.png',
     maskSrc:'images/HotRadiator.png',
-    w: 600, natW: 1254, natH: 1254,
+    w: 480, natW: 1254, natH: 1254,
     group: 'hot',
   },
   range: {
