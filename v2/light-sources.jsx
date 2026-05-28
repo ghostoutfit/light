@@ -299,6 +299,26 @@ const GLOW_DEFAULTS = {
 };
 
 
+// ── Temperature display config ────────────────────────────────
+// Max surface/element temps at full power (amplitude=500), room temp = 22°C baseline
+const TEMP_CFG = {
+  radiator: 95,    // household radiator surface
+  bulb:     2480,  // tungsten filament
+  range:    450,   // electric cooker hob
+  gel:      320,   // halogen lamp envelope
+  tanbulb:  62,    // fluorescent UV tube surface
+  led:      85,    // LED junction thermal limit
+  xray:     2200,  // rotating tungsten anode
+  laser:    175,   // laser diode junction
+  sun:      5505,  // solar photosphere
+};
+function itemTemp(item) {
+  const max = TEMP_CFG[item.type];
+  if (max == null) return null;
+  if (item.type === 'sun') return max;
+  return Math.round(22 + (max - 22) * Math.sqrt(item.amplitude / 500));
+}
+
 // ── Emission shape ────────────────────────────────────────────
 function EmissionShape({ item, band, intensity, dev }) {
   if (intensity < 0.005) return null;
@@ -1950,6 +1970,35 @@ export default function App() {
               }}>
                 <EmissionGraph item={item} bandRanges={bandRanges} width={SCREEN_W - 70}
                   devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
+              </div>
+            );
+          })()}
+
+          {/* TEMP readout */}
+          {showTemp && (() => {
+            const item = items.find(it => it.id === graphItemId);
+            const temp = item ? itemTemp(item) : null;
+            if (temp == null) return null;
+            return (
+              <div style={{
+                position: 'absolute', left: 30, bottom: 28,
+                pointerEvents: 'none', zIndex: 15,
+              }}>
+                <span style={{
+                  fontFamily: '"Courier New", Courier, monospace',
+                  fontSize: 20, fontWeight: 'bold', letterSpacing: '0.08em',
+                  color: '#4e44ff',
+                  textShadow: [
+                    '0 0 2px #4e44ff',
+                    '0 0 8px #4e44ffdd',
+                    '0 0 18px #4e44ff88',
+                    '0 0 35px #4e44ff44',
+                  ].join(', '),
+                  filter: 'brightness(1.3) contrast(1.1)',
+                  userSelect: 'none',
+                }}>
+                  TEMP = {temp}°C
+                </span>
               </div>
             );
           })()}
