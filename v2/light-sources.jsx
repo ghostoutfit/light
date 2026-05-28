@@ -305,7 +305,7 @@ const GLOW_DEFAULTS = {
 const TEMP_AMP_MAX = { radiator: 120 };  // others default to 500
 const TEMP_CFG = {
   radiator: 97,    // household radiator surface
-  bulb:     1200,  // tungsten filament
+  bulb:     1157,  // tungsten filament
   range:    900,   // electric cooker hob
   gel:      29,    // UV LED panel surface
   led:      29,    // LED bulb surface
