@@ -971,6 +971,7 @@ export default function App() {
   // Baked: BTN_CX base +73, CYS [258,306,351,402,449]
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
+  const [showTemp, setShowTemp] = useState(false);
   const [godMode, setGodMode] = useState(false);
 
   useEffect(() => {
@@ -1833,6 +1834,33 @@ export default function App() {
             </span>
           </div>
 
+          {/* TEMP label — 111px below GRAPHS */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 14 + devShowGraphsX,
+              top: '50%',
+              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 111px))`,
+              zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
+            }}
+            onClick={() => setShowTemp(t => !t)}>
+            <span style={{
+              fontFamily: '"Courier New", Courier, monospace',
+              fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
+              color: showTemp ? '#4e44ff' : 'rgba(78,68,255,0.6)',
+              textShadow: showTemp ? [
+                '0 0 2px #4e44ff',
+                '0 0 8px #4e44ffdd',
+                '0 0 18px #4e44ff88',
+                '0 0 35px #4e44ff44',
+              ].join(', ') : 'none',
+              filter: showTemp ? 'brightness(1.3) contrast(1.1)' : 'none',
+              userSelect: 'none', lineHeight: 1.0, textAlign: 'left', display: 'block',
+            }}>
+              TEMP
+            </span>
+          </div>
+
           {/* CRT scanlines */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5,
@@ -1945,6 +1973,26 @@ export default function App() {
             transition: 'background 0.15s, box-shadow 0.15s',
           }}
           onClick={() => setShowGraphs(g => !g)}
+        />
+
+        {/* TEMP button — 111px below GRAPHS button */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 27 + devShowGraphsBtnX,
+            top: 333 + devShowGraphsBtnY,
+            width: 35, height: 32, borderRadius: 6,
+            background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
+            border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
+            boxShadow: showTemp ? [
+              '0 0 12px 6px #4e44ffD9',
+              '0 0 30px 12px #4e44ff94',
+              '0 0 60px 20px #4e44ff62',
+            ].join(', ') : 'none',
+            zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
+            transition: 'background 0.15s, box-shadow 0.15s',
+          }}
+          onClick={() => setShowTemp(t => !t)}
         />
 
         {/* Power button — glows when detector is on, click to hide */}
