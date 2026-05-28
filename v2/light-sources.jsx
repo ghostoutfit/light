@@ -1859,7 +1859,7 @@ export default function App() {
               position: 'absolute',
               left: 14 + devShowGraphsX,
               top: '50%',
-              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 81px))`,
+              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 71px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowTemp(t => !t)}>
@@ -2028,7 +2028,7 @@ export default function App() {
           style={{
             position: 'absolute',
             left: 27 + devShowGraphsBtnX,
-            top: 303 + devShowGraphsBtnY,
+            top: 293 + devShowGraphsBtnY,
             width: 35, height: 32, borderRadius: 6,
             background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
             border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
