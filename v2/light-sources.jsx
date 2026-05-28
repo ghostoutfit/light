@@ -303,9 +303,10 @@ const GLOW_DEFAULTS = {
 // Max surface/element temps at full power, room temp = 22°C baseline
 // ampMax matches the power slider max for each type
 const TEMP_AMP_MAX = { radiator: 120 };  // others default to 500
+const TEMP_EXP     = { bulb: 1.1 };      // per-type curve exponent (default 0.5 = sqrt)
 const TEMP_CFG = {
   radiator: 97,    // household radiator surface
-  bulb:     1157,  // tungsten filament
+  bulb:     3100,  // tungsten filament
   range:    900,   // electric cooker hob
   gel:      29,    // UV LED panel surface
   led:      29,    // LED bulb surface
@@ -318,7 +319,8 @@ function itemTemp(item) {
   if (max == null) return null;
   if (item.type === 'sun') return max;
   const ampMax = TEMP_AMP_MAX[item.type] ?? 500;
-  return Math.round(22 + (max - 22) * Math.sqrt(item.amplitude / ampMax));
+  const exp    = TEMP_EXP[item.type] ?? 0.5;
+  return Math.round(22 + (max - 22) * Math.pow(item.amplitude / ampMax, exp));
 }
 
 // ── Emission shape ────────────────────────────────────────────
