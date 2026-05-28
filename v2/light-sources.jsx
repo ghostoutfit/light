@@ -302,7 +302,7 @@ const GLOW_DEFAULTS = {
 // ── Temperature display config ────────────────────────────────
 // Max surface/element temps at full power (amplitude=500), room temp = 22°C baseline
 const TEMP_CFG = {
-  radiator: 95,    // household radiator surface
+  radiator: 97,    // household radiator surface
   bulb:     2480,  // tungsten filament
   range:    900,   // electric cooker hob
   gel:      29,    // UV LED panel surface
