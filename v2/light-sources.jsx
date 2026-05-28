@@ -305,11 +305,10 @@ const TEMP_CFG = {
   radiator: 95,    // household radiator surface
   bulb:     2480,  // tungsten filament
   range:    450,   // electric cooker hob
-  gel:      320,   // halogen lamp envelope
-  tanbulb:  62,    // fluorescent UV tube surface
-  led:      85,    // LED junction thermal limit
-  xray:     2200,  // rotating tungsten anode
-  laser:    175,   // laser diode junction
+  gel:      35,    // UV LED panel surface
+  led:      35,    // LED bulb surface
+  xray:     38,    // X-ray tube housing (body-safe enclosure)
+  remote:   22,    // TV remote — barely warms at all
   sun:      5505,  // solar photosphere
 };
 function itemTemp(item) {
