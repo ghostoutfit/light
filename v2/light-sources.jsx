@@ -112,7 +112,7 @@ const SLIDER_CFG = {
   bulb: {
     peakMin: 400,  peakMax: 1200,
     widthMin: 5,   widthMax: 300,
-    peakDefault: 200, widthDefault: 173, skewDefault: 7.0,
+    peakDefault: 60, widthDefault: 173, skewDefault: 7.0,
   },
 };
 // Log-scale peak slider helpers (per type)
@@ -1578,7 +1578,11 @@ export default function App() {
                         } else if (item.type === 'radiator') {
                           updateItem(item.id, { amplitude: v, peak: Math.round(10 + t * 25) });
                         } else if (item.type === 'bulb') {
-                          updateItem(item.id, { amplitude: v, peak: Math.round(200 + t * 380) });
+                          // Two-phase peak ramp: slow (60→200) for first 30%, faster (200→580) after
+                          const bulbPeak = t <= 0.3
+                            ? Math.round(60 + (200 - 60) * (t / 0.3))
+                            : Math.round(200 + (580 - 200) * ((t - 0.3) / 0.7));
+                          updateItem(item.id, { amplitude: v, peak: bulbPeak });
                         } else {
                           updateItem(item.id, { amplitude: v });
                         }
