@@ -300,7 +300,9 @@ const GLOW_DEFAULTS = {
 
 
 // ── Temperature display config ────────────────────────────────
-// Max surface/element temps at full power (amplitude=500), room temp = 22°C baseline
+// Max surface/element temps at full power, room temp = 22°C baseline
+// ampMax matches the power slider max for each type
+const TEMP_AMP_MAX = { radiator: 120 };  // others default to 500
 const TEMP_CFG = {
   radiator: 97,    // household radiator surface
   bulb:     2480,  // tungsten filament
@@ -315,7 +317,8 @@ function itemTemp(item) {
   const max = TEMP_CFG[item.type];
   if (max == null) return null;
   if (item.type === 'sun') return max;
-  return Math.round(22 + (max - 22) * Math.sqrt(item.amplitude / 500));
+  const ampMax = TEMP_AMP_MAX[item.type] ?? 500;
+  return Math.round(22 + (max - 22) * Math.sqrt(item.amplitude / ampMax));
 }
 
 // ── Emission shape ────────────────────────────────────────────
