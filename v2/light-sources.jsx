@@ -1980,7 +1980,7 @@ export default function App() {
             if (temp == null) return null;
             return (
               <div style={{
-                position: 'absolute', left: 30, bottom: 128,
+                position: 'absolute', left: 30, bottom: 58,
                 pointerEvents: 'none', zIndex: 15,
               }}>
                 <span style={{
