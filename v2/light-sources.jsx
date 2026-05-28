@@ -1060,7 +1060,7 @@ export default function App() {
 
   // ── Graph-in-detector: which item's graph to show ─────────────
   useEffect(() => {
-    if (!showGraphs || !showDetector || items.length === 0) {
+    if ((!showGraphs && !showTemp) || !showDetector || items.length === 0) {
       if (graphItemIdRef.current !== null) setGraphItemId(null);
       return;
     }
@@ -1093,7 +1093,7 @@ export default function App() {
     if (qualifying.some(q => q.id === graphItemIdRef.current)) return; // keep current
     const best = qualifying.reduce((a, b) => a.intersection > b.intersection ? a : b);
     setGraphItemId(best.id);
-  }, [showGraphs, showDetector, items, viewerPos]);
+  }, [showGraphs, showTemp, showDetector, items, viewerPos]);
 
   const benchRef = useRef(null);
   const partsRef = useRef(null);
@@ -1859,7 +1859,7 @@ export default function App() {
               position: 'absolute',
               left: 14 + devShowGraphsX,
               top: '50%',
-              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 111px))`,
+              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 81px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowTemp(t => !t)}>
@@ -2028,7 +2028,7 @@ export default function App() {
           style={{
             position: 'absolute',
             left: 27 + devShowGraphsBtnX,
-            top: 333 + devShowGraphsBtnY,
+            top: 303 + devShowGraphsBtnY,
             width: 35, height: 32, borderRadius: 6,
             background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
             border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
