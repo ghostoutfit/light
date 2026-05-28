@@ -306,7 +306,7 @@ const TEMP_CFG = {
   bulb:     2480,  // tungsten filament
   range:    450,   // electric cooker hob
   gel:      35,    // UV LED panel surface
-  led:      35,    // LED bulb surface
+  led:      29,    // LED bulb surface
   xray:     45,    // X-ray tube housing
   remote:   22,    // TV remote — barely warms at all
   sun:      5505,  // solar photosphere
