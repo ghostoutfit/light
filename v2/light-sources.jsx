@@ -307,7 +307,7 @@ const TEMP_CFG = {
   range:    450,   // electric cooker hob
   gel:      35,    // UV LED panel surface
   led:      35,    // LED bulb surface
-  xray:     38,    // X-ray tube housing (body-safe enclosure)
+  xray:     45,    // X-ray tube housing
   remote:   22,    // TV remote — barely warms at all
   sun:      5505,  // solar photosphere
 };
