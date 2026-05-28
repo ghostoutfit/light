@@ -304,7 +304,7 @@ const GLOW_DEFAULTS = {
 const TEMP_CFG = {
   radiator: 95,    // household radiator surface
   bulb:     2480,  // tungsten filament
-  range:    450,   // electric cooker hob
+  range:    900,   // electric cooker hob
   gel:      29,    // UV LED panel surface
   led:      29,    // LED bulb surface
   xray:     45,    // X-ray tube housing
