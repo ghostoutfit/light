@@ -104,6 +104,11 @@ const SLIDER_CFG = {
     widthMin: 200, widthMax: 8000,
     peakDefault: 9700, widthDefault: 700, skewDefault: 1.0,
   },
+  sun: {
+    peakMin: 100, peakMax: 20000,
+    widthMin: 100, widthMax: 20000,
+    peakDefault: 566, widthDefault: 4500, skewDefault: 6.0,
+  },
   bulb: {
     peakMin: 400,  peakMax: 1200,
     widthMin: 5,   widthMax: 300,
@@ -238,6 +243,12 @@ const SOURCES = {
     w: 200, natW: 878, natH: 1022,
     group: 'specialized',
   },
+  sun: {
+    label: 'The Sun',
+    src: `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="white"/></svg>`,
+    w: 220, natW: 100, natH: 100,
+    group: 'secret',
+  },
 };
 
 // ── Camera bands ──────────────────────────────────────────────
@@ -294,6 +305,51 @@ function EmissionShape({ item, band, intensity, dev }) {
 
   const s    = SOURCES[item.type];
   const imgH = s.w * (s.natH / s.natW);
+
+  // ── Sun — always blazing, per-band viz ────────────────────────
+  if (item.type === 'sun') {
+    const r = s.w / 2;
+    const glowLayer = (expand, color, blur) => (
+      <div style={{
+        position: 'absolute',
+        left: -expand, top: -expand,
+        width: s.w + expand * 2, height: s.w + expand * 2,
+        borderRadius: '50%',
+        background: `radial-gradient(circle, ${color} 0%, transparent 70%)`,
+        filter: `blur(${blur}px)`,
+        mixBlendMode: 'screen', pointerEvents: 'none',
+      }} />
+    );
+    const configs = {
+      IR: [
+        [s.w * 2,  'rgba(255,255,255,0.55)', 60],
+        [s.w,      'rgba(255,255,255,0.75)', 25],
+        [s.w * 0.3,'rgba(255,255,255,0.92)',  8],
+      ],
+      Visible: [
+        [s.w * 1.5,'rgba(255,255,255,0.5)',  50],
+        [s.w * 0.5,'rgba(255,255,255,0.85)', 15],
+        [s.w * 0.1,'rgba(255,255,255,1.0)',   3],
+      ],
+      UV: [
+        [s.w * 1.2,'rgba(255,255,255,0.45)', 45],
+        [s.w * 0.4,'rgba(255,255,255,0.75)', 12],
+        [s.w * 0.1,'rgba(255,255,255,0.92)',  3],
+      ],
+      XRay: [
+        [s.w * 0.4,'rgba(255,255,255,0.06)', 20],
+        [s.w * 0.1,'rgba(255,255,255,0.10)',  5],
+      ],
+    };
+    const layers = configs[band.id];
+    if (!layers) return null;
+    return (
+      <div className="absolute pointer-events-none"
+        style={{ left: item.x, top: item.y, width: s.w, height: s.w }}>
+        {layers.map(([expand, color, blur], i) => <React.Fragment key={i}>{glowLayer(expand, color, blur)}</React.Fragment>)}
+      </div>
+    );
+  }
 
   if (band.id === 'IR') {
     // Bulb-specific thermal scale: onset at ~2% power, full brightness at 100%
@@ -915,6 +971,18 @@ export default function App() {
   // Baked: BTN_CX base +73, CYS [258,306,351,402,449]
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
+  const [godMode, setGodMode] = useState(false);
+
+  useEffect(() => {
+    const secret = 'god mode';
+    let buf = '';
+    const handler = e => {
+      buf = (buf + e.key).slice(-secret.length);
+      if (buf === secret) setGodMode(true);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const [viewerPos, setViewerPos] = useState({ x: 40, y: 80 });
   const [viewerDrag, setViewerDrag] = useState(null); // { ox, oy }
   const [showDetector, setShowDetector] = useState(false);
@@ -945,15 +1013,15 @@ export default function App() {
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 22, bulbFilamentBlur: 1,
     bulbOutsideMag: 1.5, bulbFilamentMag: 2.5,
-    maskX: { range: -11, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
-    maskY: { range: -25, bulb: 2, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
-    benchX: { range: -12, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
-    benchY: { range: -26, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0 },
-    visOpacity: { range: 5.0, bulb: 5.0,  xray: 1.0, gel: 5.0,  remote: 0, radiator: 0, led: 5.0 },
-    visHue:     { range: -8,  bulb: 0,    xray: 0,   gel: -88,  remote: 0, radiator: 0, led: 0 },
-    visBlur:    { range: 3.0, bulb: 3.0,  xray: 1.0, gel: 4.5,  remote: 1.0, radiator: 1.0, led: 3.0 },
-    visSat:     { range: 5.0, bulb: 8.0,  xray: 1.0, gel: 28.0, remote: 1.0, radiator: 1.0, led: 5.0 },
-    visBright:  { range: 1.0, bulb: 1.0,  xray: 1.0, gel: 1.0,  remote: 1.0, radiator: 1.0, led: 1.0 } };
+    maskX: { range: -11, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0, sun: 0 },
+    maskY: { range: -25, bulb: 2, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0, sun: 0 },
+    benchX: { range: -12, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0, sun: 0 },
+    benchY: { range: -26, bulb: 0, xray: 0, gel: 0, remote: 0, radiator: 0, led: 0, sun: 0 },
+    visOpacity: { range: 5.0, bulb: 5.0,  xray: 1.0, gel: 5.0,  remote: 0, radiator: 0, led: 5.0, sun: 5.0 },
+    visHue:     { range: -8,  bulb: 0,    xray: 0,   gel: -88,  remote: 0, radiator: 0, led: 0,   sun: 0 },
+    visBlur:    { range: 3.0, bulb: 3.0,  xray: 1.0, gel: 4.5,  remote: 1.0, radiator: 1.0, led: 3.0, sun: 3.0 },
+    visSat:     { range: 5.0, bulb: 8.0,  xray: 1.0, gel: 28.0, remote: 1.0, radiator: 1.0, led: 5.0, sun: 1.0 },
+    visBright:  { range: 1.0, bulb: 1.0,  xray: 1.0, gel: 1.0,  remote: 1.0, radiator: 1.0, led: 1.0, sun: 1.0 } };
 
   // Band ranges in Hz; freq = geometric mean (midpoint on log scale).
   // pct = visual width % on the log-scale bar.
@@ -1111,7 +1179,7 @@ export default function App() {
             if (prev.some(it => it.type === drag.type)) return prev;
             return [...prev, {
               id: uid++, type: drag.type, x, y,
-              amplitude: 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
+              amplitude: drag.type === 'sun' ? 500 : 0, skew: SLIDER_CFG[drag.type].skewDefault ?? 3.0,
               peak: SLIDER_CFG[drag.type].peakDefault,
               widthHz: SLIDER_CFG[drag.type].widthDefault,
               glowX:   GLOW_DEFAULTS[drag.type]?.glowX   ?? 0,
@@ -1213,6 +1281,7 @@ export default function App() {
           {[
             { label: 'Heat Sources', color: 'rgba(251,146,60,0.7)', group: 'hot' },
             { label: 'Other Sources', color: 'rgba(96,165,250,0.7)', group: 'specialized' },
+            ...(godMode ? [{ label: '✦ Secret', color: 'rgba(255,220,50,0.9)', group: 'secret' }] : []),
           ].map(({ label, color, group }) => {
             const groupSources = Object.entries(SOURCES).filter(([, s]) => s.group === group);
             return (
@@ -1315,13 +1384,13 @@ export default function App() {
                 {devMode ? (
                   <>
                     {/* Amplitude */}
-                    <div className="flex items-center gap-1.5">
+                    {item.type !== 'sun' && <div className="flex items-center gap-1.5">
                       <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Amp</span>
                       <input type="range" min="0" max="500" value={item.amplitude}
                         className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
                         onChange={e => updateItem(item.id, { amplitude: +e.target.value })} />
                       <span className="text-[8px] text-zinc-500 w-6 text-right tabular-nums">{item.amplitude}</span>
-                    </div>
+                    </div>}
                     {/* Peak — log scale, per-type range */}
                     {(() => {
                       const cfg  = SLIDER_CFG[item.type];
@@ -1466,7 +1535,7 @@ export default function App() {
                       );
                     })()}
                   </>
-                ) : (
+                ) : item.type === 'sun' ? null : (
                   <div className="flex items-center gap-1.5">
                     <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Power</span>
                     <input type="range" min="0" max={item.type === 'radiator' ? 120 : 500} value={item.amplitude}
@@ -1489,6 +1558,18 @@ export default function App() {
               </div>}
               {/* Item image + visible-light glow overlay */}
               <div style={{ position: 'relative', width: s.w, height: imgH }}>
+                {/* Sun bench glow — always on, multiple bloom layers */}
+                {item.type === 'sun' && (<>
+                  <div style={{ position: 'absolute', left: -s.w, top: -s.w, width: s.w*3, height: s.w*3, borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(255,240,150,0.55) 0%, rgba(255,180,30,0.25) 35%, rgba(255,100,0,0.08) 65%, transparent 100%)',
+                    filter: 'blur(30px)', mixBlendMode: 'screen', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', left: -s.w*0.3, top: -s.w*0.3, width: s.w*1.6, height: s.w*1.6, borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(255,255,220,0.9) 0%, rgba(255,220,80,0.6) 40%, transparent 75%)',
+                    filter: 'blur(8px)', mixBlendMode: 'screen', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', left: s.w*0.05, top: s.w*0.05, width: s.w*0.9, height: s.w*0.9, borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(255,255,255,1) 30%, rgba(255,240,180,0.9) 70%, transparent 100%)',
+                    mixBlendMode: 'screen', pointerEvents: 'none' }} />
+                </>)}
                 <img src={s.src} alt={s.label}
                   style={{ width: s.w, height: imgH, display: 'block' }}
                   className="drop-shadow-lg"
