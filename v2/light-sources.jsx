@@ -1973,10 +1973,30 @@ export default function App() {
             );
           })()}
 
-          {/* TEMP readout */}
+          {/* TEMP readout — hottest qualifying item in the screen */}
           {showTemp && (() => {
-            const item = items.find(it => it.id === graphItemId);
-            const temp = item ? itemTemp(item) : null;
+            const screenLeft   = viewerPos.x + SCREEN_L;
+            const screenTop    = viewerPos.y + SCREEN_T - BENCH_TOP;
+            const screenRight  = screenLeft + SCREEN_W;
+            const screenBottom = screenTop  + SCREEN_H;
+            const screenArea   = SCREEN_W * SCREEN_H;
+            let temp = null;
+            for (const it of items) {
+              const s = SOURCES[it.type];
+              const imgH = s.w * (s.natH / s.natW);
+              const ix1 = Math.max(it.x, screenLeft);
+              const ix2 = Math.min(it.x + s.w, screenRight);
+              const iy1 = Math.max(it.y, screenTop);
+              const iy2 = Math.min(it.y + imgH, screenBottom);
+              if (ix2 <= ix1 || iy2 <= iy1) continue;
+              const intersection = (ix2 - ix1) * (iy2 - iy1);
+              const passes = it.type === 'radiator'
+                ? intersection / screenArea >= 1 / 3
+                : intersection / (s.w * imgH) >= 0.5;
+              if (!passes) continue;
+              const t = itemTemp(it);
+              if (t != null && (temp === null || t > temp)) temp = t;
+            }
             if (temp == null) return null;
             return (
               <div style={{
