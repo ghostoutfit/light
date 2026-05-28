@@ -337,8 +337,8 @@ function EmissionShape({ item, band, intensity, dev }) {
         [s.w * 0.1,'rgba(255,255,255,0.92)',  3],
       ],
       XRay: [
-        [s.w * 0.4,'rgba(255,255,255,0.06)', 20],
-        [s.w * 0.1,'rgba(255,255,255,0.10)',  5],
+        [s.w * 0.35,'rgba(255,255,255,0.22)', 0],
+        [s.w * 0.12,'rgba(255,255,255,0.35)', 0],
       ],
     };
     const layers = configs[band.id];
@@ -1368,7 +1368,7 @@ export default function App() {
           return (
             <div key={item.id} className="absolute touch-none"
               style={{ left: item.x, top: item.y, width: s.w }}>
-              {!isBeingDragged && <div
+              {!isBeingDragged && (devMode || item.type !== 'sun') && <div
                 className="absolute rounded-lg px-2 py-2 flex flex-col gap-1.5
                            border border-white/10 backdrop-blur-sm"
                 style={{
