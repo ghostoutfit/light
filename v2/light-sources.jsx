@@ -974,11 +974,11 @@ export default function App() {
   const [godMode, setGodMode] = useState(false);
 
   useEffect(() => {
-    const secret = 'god mode';
+    const secrets = ['god mode', 'godmode'];
     let buf = '';
     const handler = e => {
-      buf = (buf + e.key).slice(-secret.length);
-      if (buf === secret) setGodMode(true);
+      buf = (buf + e.key).slice(-secrets[0].length);
+      if (secrets.some(s => buf.endsWith(s))) setGodMode(true);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
