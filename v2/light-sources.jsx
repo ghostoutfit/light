@@ -414,6 +414,11 @@ function EmissionShape({ item, band, intensity, dev }) {
     }
 
     if (s.maskSrc) {
+      // Radiator IR onset: fade in from 15% to 25% power
+      const radiatorFade = item.type === 'radiator'
+        ? clamp((item.amplitude / 120 - 0.15) / 0.10, 0, 1)
+        : 1;
+      if (radiatorFade <= 0) return null;
       const glowOp = clamp((therm - 1.4) / 4.0, 0, 1.0);
       return (
         <div className="absolute pointer-events-none"
@@ -432,7 +437,7 @@ function EmissionShape({ item, band, intensity, dev }) {
               draggable={false} />
           )}
           {THERMAL.map((layer, i) => {
-            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1);
+            const fadeIn = clamp((therm - layer.t) / 0.8, 0, 1) * radiatorFade;
             if (fadeIn <= 0.01) return null;
             return (
               <img key={i} src={s.maskSrc}
