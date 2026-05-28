@@ -305,7 +305,7 @@ const TEMP_CFG = {
   radiator: 95,    // household radiator surface
   bulb:     2480,  // tungsten filament
   range:    450,   // electric cooker hob
-  gel:      35,    // UV LED panel surface
+  gel:      29,    // UV LED panel surface
   led:      29,    // LED bulb surface
   xray:     45,    // X-ray tube housing
   remote:   22,    // TV remote — barely warms at all
