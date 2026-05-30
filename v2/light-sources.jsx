@@ -993,6 +993,7 @@ export default function App() {
   const [devShowGraphsBtnY,   setDevShowGraphsBtnY]   = useState(0);
   const [devScreenX,          setDevScreenX]          = useState(0);
   const [devScreenY,          setDevScreenY]          = useState(0);
+  const [devScreenW,          setDevScreenW]          = useState(0);
   const [devBtnYVis,          setDevBtnYVis]          = useState(0);
   const [devBtnYUV,           setDevBtnYUV]           = useState(0);
   const [devBtnYXRay,         setDevBtnYXRay]         = useState(0);
@@ -1021,13 +1022,13 @@ export default function App() {
   const graphItemIdRef = useRef(null);
   graphItemIdRef.current = graphItemId;
 
-  // Viewer layout constants (image is 1224×1024)
+  // Viewer layout constants (image is 1369×1149)
   const VIEWER_H = 630;
-  const VIEWER_W = Math.round(VIEWER_H * 1224 / 1024); // ≈ 752
-  const VS = VIEWER_H / 1024; // scale factor based on height
+  const VIEWER_W = Math.round(VIEWER_H * 1369 / 1149); // ≈ 751
+  const VS = VIEWER_H / 1149; // scale factor based on height
   const SCREEN_L = 68 + devScreenX;
   const SCREEN_T = 74 + devScreenY;
-  const SCREEN_W = Math.round(783 * VS) + 60;
+  const SCREEN_W = Math.round(783 * VS) + 60 + devScreenW;
   const SCREEN_H = 495;
   const BENCH_TOP = 30; // bench marginTop in px
   // 4 circular band buttons — positions fine-tuned to the panel image
@@ -1803,6 +1804,8 @@ export default function App() {
             value={devScreenX} onChange={setDevScreenX} fmt={v => v.toFixed(0)} />
           <DevSlider label="Screen Y" min={-300} max={300} step={1}
             value={devScreenY} onChange={setDevScreenY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="Screen W" min={-200} max={200} step={1}
+            value={devScreenW} onChange={setDevScreenW} fmt={v => v.toFixed(0)} />
           <DevSlider label="Btn X" min={-200} max={200} step={1}
             value={devBtnX} onChange={setDevBtnX} fmt={v => v.toFixed(0)} />
           <DevSlider label="Btn Y (all)" min={-200} max={200} step={1}
