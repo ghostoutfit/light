@@ -991,6 +991,15 @@ export default function App() {
   const [devShowGraphsY,      setDevShowGraphsY]      = useState(0);
   const [devShowGraphsBtnX,   setDevShowGraphsBtnX]   = useState(0);
   const [devShowGraphsBtnY,   setDevShowGraphsBtnY]   = useState(0);
+  const [devGrBtnX,           setDevGrBtnX]           = useState(0);
+  const [devGrBtnY,           setDevGrBtnY]           = useState(0);
+  const [devGrBtnW,           setDevGrBtnW]           = useState(0);
+  const [devTempBtnX,         setDevTempBtnX]         = useState(0);
+  const [devTempBtnY,         setDevTempBtnY]         = useState(0);
+  const [devTempBtnW,         setDevTempBtnW]         = useState(0);
+  const [devOnBtnX,           setDevOnBtnX]           = useState(0);
+  const [devOnBtnY,           setDevOnBtnY]           = useState(0);
+  const [devOnBtnW,           setDevOnBtnW]           = useState(0);
   const [devScreenX,          setDevScreenX]          = useState(0);
   const [devScreenY,          setDevScreenY]          = useState(0);
   const [devScreenW,          setDevScreenW]          = useState(0);
@@ -1801,6 +1810,24 @@ export default function App() {
             value={devShowGraphsBtnX} onChange={setDevShowGraphsBtnX} fmt={v => v.toFixed(0)} />
           <DevSlider label="GrBtn Y" min={-300} max={700} step={1}
             value={devShowGraphsBtnY} onChange={setDevShowGraphsBtnY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="GRAPHS X" min={-200} max={200} step={1}
+            value={devGrBtnX} onChange={setDevGrBtnX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="GRAPHS Y" min={-200} max={200} step={1}
+            value={devGrBtnY} onChange={setDevGrBtnY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="GRAPHS W" min={-100} max={100} step={1}
+            value={devGrBtnW} onChange={setDevGrBtnW} fmt={v => v.toFixed(0)} />
+          <DevSlider label="TEMP X" min={-200} max={200} step={1}
+            value={devTempBtnX} onChange={setDevTempBtnX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="TEMP Y" min={-200} max={200} step={1}
+            value={devTempBtnY} onChange={setDevTempBtnY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="TEMP W" min={-100} max={100} step={1}
+            value={devTempBtnW} onChange={setDevTempBtnW} fmt={v => v.toFixed(0)} />
+          <DevSlider label="ON X" min={-200} max={200} step={1}
+            value={devOnBtnX} onChange={setDevOnBtnX} fmt={v => v.toFixed(0)} />
+          <DevSlider label="ON Y" min={-200} max={200} step={1}
+            value={devOnBtnY} onChange={setDevOnBtnY} fmt={v => v.toFixed(0)} />
+          <DevSlider label="ON W" min={-100} max={100} step={1}
+            value={devOnBtnW} onChange={setDevOnBtnW} fmt={v => v.toFixed(0)} />
           <DevSlider label="Screen X" min={-300} max={300} step={1}
             value={devScreenX} onChange={setDevScreenX} fmt={v => v.toFixed(0)} />
           <DevSlider label="Screen Y" min={-300} max={300} step={1}
@@ -1849,9 +1876,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 29 + devShowGraphsX,
+              left: 29 + devShowGraphsX + devGrBtnX,
               top: '50%',
-              transform: `translateY(calc(-50% - 108px + ${devShowGraphsY}px))`,
+              transform: `translateY(calc(-50% - 108px + ${devShowGraphsY + devGrBtnY}px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowGraphs(g => !g)}>
@@ -1876,9 +1903,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 29 + devShowGraphsX,
+              left: 29 + devShowGraphsX + devTempBtnX,
               top: '50%',
-              transform: `translateY(calc(-50% - 40px + ${devShowGraphsY}px))`,
+              transform: `translateY(calc(-50% - 40px + ${devShowGraphsY + devTempBtnY}px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowTemp(t => !t)}>
@@ -2047,9 +2074,9 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 45 + devShowGraphsBtnX,
-            top: 191 + devShowGraphsBtnY,
-            width: 35, height: 32, borderRadius: 6,
+            left: 45 + devShowGraphsBtnX + devGrBtnX,
+            top: 191 + devShowGraphsBtnY + devGrBtnY,
+            width: 35 + devGrBtnW, height: 32, borderRadius: 6,
             background: showGraphs ? '#fe2b7180' : 'rgba(0,0,0,0)',
             border: `2px solid ${showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.4)'}`,
             boxShadow: showGraphs ? [
@@ -2067,9 +2094,9 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 45 + devShowGraphsBtnX,
-            top: 259 + devShowGraphsBtnY,
-            width: 35, height: 32, borderRadius: 6,
+            left: 45 + devShowGraphsBtnX + devTempBtnX,
+            top: 259 + devShowGraphsBtnY + devTempBtnY,
+            width: 35 + devTempBtnW, height: 32, borderRadius: 6,
             background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
             border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
             boxShadow: showTemp ? [
@@ -2087,9 +2114,9 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 47 + devShowGraphsBtnX,
-            top: 331 + devShowGraphsBtnY,
-            width: 35, height: 32, borderRadius: 6,
+            left: 47 + devShowGraphsBtnX + devOnBtnX,
+            top: 331 + devShowGraphsBtnY + devOnBtnY,
+            width: 35 + devOnBtnW, height: 32, borderRadius: 6,
             background: showDetector ? '#f24a3880' : 'rgba(0,0,0,0)',
             border: `1px solid ${showDetector ? '#f24a38' : 'rgba(242,74,56,0.4)'}`,
             boxShadow: showDetector ? [
@@ -2105,8 +2132,8 @@ export default function App() {
         {/* ON label — directly below SHOW GRAPH text */}
         <div style={{
           position: 'absolute',
-          left: SCREEN_L + 29 + devShowGraphsX,
-          top: 364,
+          left: SCREEN_L + 29 + devShowGraphsX + devOnBtnX,
+          top: 364 + devOnBtnY,
           zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
           display: 'flex', alignItems: 'center', height: 32,
         }}
