@@ -981,34 +981,10 @@ export default function App() {
   const [dividers, setDividers] = useState([400, 800, 5000]);
   const [divDrag,  setDivDrag]  = useState(null); // { idx, barLeft, barWidth }
 
-  // Dev tuning
-  const [devBlurScale,        setDevBlurScale]        = useState(0.08);
-  const [devBulbVisBright,    setDevBulbVisBright]    = useState(20.0);
-  const [devBulbCamMax,       setDevBulbCamMax]       = useState(0.6);
-  const [devBtnX,             setDevBtnX]             = useState(0);
-  const [devBtnY,             setDevBtnY]             = useState(0);
-  const [devShowGraphsX,      setDevShowGraphsX]      = useState(0);
-  const [devShowGraphsY,      setDevShowGraphsY]      = useState(0);
-  const [devShowGraphsBtnX,   setDevShowGraphsBtnX]   = useState(0);
-  const [devShowGraphsBtnY,   setDevShowGraphsBtnY]   = useState(0);
-  const [devGrBtnX,           setDevGrBtnX]           = useState(0);
-  const [devGrBtnY,           setDevGrBtnY]           = useState(0);
-  const [devGrBtnW,           setDevGrBtnW]           = useState(0);
-  const [devTempBtnX,         setDevTempBtnX]         = useState(0);
-  const [devTempBtnY,         setDevTempBtnY]         = useState(0);
-  const [devTempBtnW,         setDevTempBtnW]         = useState(0);
-  const [devOnBtnX,           setDevOnBtnX]           = useState(0);
-  const [devOnBtnY,           setDevOnBtnY]           = useState(0);
-  const [devOnBtnW,           setDevOnBtnW]           = useState(0);
-  const [devScreenX,          setDevScreenX]          = useState(0);
-  const [devScreenY,          setDevScreenY]          = useState(0);
-  const [devScreenW,          setDevScreenW]          = useState(0);
-  const [devBtnYVis,          setDevBtnYVis]          = useState(0);
-  const [devBtnYUV,           setDevBtnYUV]           = useState(0);
-  const [devBtnYXRay,         setDevBtnYXRay]         = useState(0);
-  const [devBtnYPhoto,        setDevBtnYPhoto]        = useState(0);
-  // Baked: SHOWGR X=15 Y=-30, GRBTN X=18 Y=-31, SCREEN X=3 Y=-3 W=131, BTN X=130 Y=-35, VIS Y=0 UV Y=6 XRAY Y=5 PHOTO Y=9
-  // Baked: BTN_CX base +73, CYS [258,306,351,402,449]
+  // Dev tuning (baked constants — no more sliders)
+  const devBlurScale     = 0.08;
+  const devBulbVisBright = 20.0;
+  const devBulbCamMax    = 0.6;
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
   const [showTemp, setShowTemp] = useState(false);
@@ -1036,20 +1012,20 @@ export default function App() {
   const VIEWER_H = 630;
   const VIEWER_W = Math.round(VIEWER_H * 1369 / 1149); // ≈ 751
   const VS = VIEWER_H / 1149; // scale factor based on height
-  const SCREEN_L = 71 + devScreenX;
-  const SCREEN_T = 71 + devScreenY;
-  const SCREEN_W = Math.round(783 * VS) + 191 + devScreenW;
+  const SCREEN_L = 71;
+  const SCREEN_T = 71;
+  const SCREEN_W = Math.round(783 * VS) + 191;
   const SCREEN_H = 475;
   const BENCH_TOP = 30; // bench marginTop in px
   // 4 circular band buttons — positions fine-tuned to the panel image
-  const BTN_CX  = Math.round(882 * VS) + 203 + devBtnX;
+  const BTN_CX  = Math.round(882 * VS) + 203;
   const BTN_R   = Math.round(28  * VS);
   const BTN_CYS = [
-    223 + devBtnY,
-    271 + devBtnY + devBtnYVis,
-    322 + devBtnY + devBtnYUV,
-    372 + devBtnY + devBtnYXRay,
-    423 + devBtnY + devBtnYPhoto,
+    223,
+    271,
+    322,
+    372,
+    423,
   ];
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
@@ -1790,60 +1766,6 @@ export default function App() {
 
       </div>
 
-      {/* Dev panel — fixed bottom strip */}
-      {devMode && (
-        <div className="fixed bottom-0 left-0 right-0 z-40
-                        flex flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2
-                        bg-zinc-950/92 border-t border-zinc-800/60 backdrop-blur-sm">
-          <span className="text-[8px] text-zinc-600 uppercase tracking-widest shrink-0">Dev</span>
-          <DevSlider label="Blur ×" min={0} max={0.5} step={0.01}
-            value={devBlurScale} onChange={setDevBlurScale} fmt={v => v.toFixed(2)} />
-          <DevSlider label="Bulb Bright" min={0} max={20} step={0.5}
-            value={devBulbVisBright} onChange={setDevBulbVisBright} fmt={v => v.toFixed(1)} />
-          <DevSlider label="Cam Vis Max" min={0.05} max={1.0} step={0.025}
-            value={devBulbCamMax} onChange={setDevBulbCamMax} fmt={v => v.toFixed(3)} />
-          <DevSlider label="ShowGr X" min={-300} max={300} step={1}
-            value={devShowGraphsX} onChange={setDevShowGraphsX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="ShowGr Y" min={-300} max={300} step={1}
-            value={devShowGraphsY} onChange={setDevShowGraphsY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="GRAPHS X" min={-200} max={200} step={1}
-            value={devGrBtnX} onChange={setDevGrBtnX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="GRAPHS Y" min={-200} max={200} step={1}
-            value={devGrBtnY} onChange={setDevGrBtnY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="GRAPHS W" min={-100} max={100} step={1}
-            value={devGrBtnW} onChange={setDevGrBtnW} fmt={v => v.toFixed(0)} />
-          <DevSlider label="TEMP X" min={-200} max={200} step={1}
-            value={devTempBtnX} onChange={setDevTempBtnX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="TEMP Y" min={-200} max={200} step={1}
-            value={devTempBtnY} onChange={setDevTempBtnY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="TEMP W" min={-100} max={100} step={1}
-            value={devTempBtnW} onChange={setDevTempBtnW} fmt={v => v.toFixed(0)} />
-          <DevSlider label="ON X" min={-200} max={200} step={1}
-            value={devOnBtnX} onChange={setDevOnBtnX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="ON Y" min={-200} max={200} step={1}
-            value={devOnBtnY} onChange={setDevOnBtnY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="ON W" min={-100} max={100} step={1}
-            value={devOnBtnW} onChange={setDevOnBtnW} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Screen X" min={-300} max={300} step={1}
-            value={devScreenX} onChange={setDevScreenX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Screen Y" min={-300} max={300} step={1}
-            value={devScreenY} onChange={setDevScreenY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Screen W" min={-200} max={200} step={1}
-            value={devScreenW} onChange={setDevScreenW} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Btn X" min={-200} max={200} step={1}
-            value={devBtnX} onChange={setDevBtnX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Btn Y (all)" min={-200} max={200} step={1}
-            value={devBtnY} onChange={setDevBtnY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Vis Y" min={-100} max={100} step={1}
-            value={devBtnYVis} onChange={setDevBtnYVis} fmt={v => v.toFixed(0)} />
-          <DevSlider label="UV Y" min={-100} max={100} step={1}
-            value={devBtnYUV} onChange={setDevBtnYUV} fmt={v => v.toFixed(0)} />
-          <DevSlider label="XRay Y" min={-100} max={100} step={1}
-            value={devBtnYXRay} onChange={setDevBtnYXRay} fmt={v => v.toFixed(0)} />
-          <DevSlider label="Photo Y" min={-100} max={100} step={1}
-            value={devBtnYPhoto} onChange={setDevBtnYPhoto} fmt={v => v.toFixed(0)} />
-        </div>
-      )}
 
       {/* ══════════════════════════════════════════
           VIEWER — draggable camera device
@@ -1872,9 +1794,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 29 + devShowGraphsX + devGrBtnX,
+              left: 30,
               top: '50%',
-              transform: `translateY(calc(-50% - 108px + ${devShowGraphsY + devGrBtnY}px))`,
+              transform: 'translateY(calc(-50% - 101px))',
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowGraphs(g => !g)}>
@@ -1899,9 +1821,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 29 + devShowGraphsX + devTempBtnX,
+              left: 29,
               top: '50%',
-              transform: `translateY(calc(-50% - 40px + ${devShowGraphsY + devTempBtnY}px))`,
+              transform: 'translateY(calc(-50% - 24px))',
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowTemp(t => !t)}>
@@ -2070,11 +1992,10 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 45 + devShowGraphsBtnX + devGrBtnX,
-            top: 191 + devShowGraphsBtnY + devGrBtnY,
-            width: 35 + devGrBtnW, height: 32, borderRadius: 6,
+            left: 46, top: 190,
+            width: 35, height: 32, borderRadius: 6,
             background: showGraphs ? '#fe2b7180' : 'rgba(0,0,0,0)',
-            border: `2px solid ${showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.4)'}`,
+            border: showGraphs ? '2px solid #fe2b71' : 'none',
             boxShadow: showGraphs ? [
               '0 0 12px 6px #fe2b71D9',
               '0 0 30px 12px #fe2b7194',
@@ -2090,11 +2011,10 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 45 + devShowGraphsBtnX + devTempBtnX,
-            top: 259 + devShowGraphsBtnY + devTempBtnY,
-            width: 35 + devTempBtnW, height: 32, borderRadius: 6,
+            left: 45, top: 267,
+            width: 36, height: 32, borderRadius: 6,
             background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
-            border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
+            border: showTemp ? '2px solid #4e44ff' : 'none',
             boxShadow: showTemp ? [
               '0 0 12px 6px #4e44ffD9',
               '0 0 30px 12px #4e44ff94',
@@ -2110,11 +2030,10 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 47 + devShowGraphsBtnX + devOnBtnX,
-            top: 331 + devShowGraphsBtnY + devOnBtnY,
-            width: 35 + devOnBtnW, height: 32, borderRadius: 6,
+            left: 47, top: 343,
+            width: 36, height: 32, borderRadius: 6,
             background: showDetector ? '#f24a3880' : 'rgba(0,0,0,0)',
-            border: `1px solid ${showDetector ? '#f24a38' : 'rgba(242,74,56,0.4)'}`,
+            border: showDetector ? '1px solid #f24a38' : 'none',
             boxShadow: showDetector ? [
               '0 0 12px 6px #f24a38D9',
               '0 0 30px 12px #f24a3894',
@@ -2128,8 +2047,8 @@ export default function App() {
         {/* ON label — directly below SHOW GRAPH text */}
         <div style={{
           position: 'absolute',
-          left: SCREEN_L + 29 + devShowGraphsX + devOnBtnX,
-          top: 364 + devOnBtnY,
+          left: SCREEN_L + 29,
+          top: 376,
           zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
           display: 'flex', alignItems: 'center', height: 32,
         }}
