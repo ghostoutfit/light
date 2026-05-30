@@ -1004,10 +1004,11 @@ export default function App() {
   const [godMode, setGodMode] = useState(false);
 
   useEffect(() => {
-    const secrets = ['god mode', 'godmode'];
+    const secrets = ['god mode', 'godmode', 'the sun', 'thesun', 'sunlight'];
+    const maxLen = Math.max(...secrets.map(s => s.length));
     let buf = '';
     const handler = e => {
-      buf = (buf + e.key).slice(-secrets[0].length);
+      buf = (buf + e.key).slice(-maxLen);
       if (secrets.some(s => buf.endsWith(s))) setGodMode(true);
     };
     window.addEventListener('keydown', handler);
