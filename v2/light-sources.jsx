@@ -1806,10 +1806,6 @@ export default function App() {
             value={devShowGraphsX} onChange={setDevShowGraphsX} fmt={v => v.toFixed(0)} />
           <DevSlider label="ShowGr Y" min={-300} max={300} step={1}
             value={devShowGraphsY} onChange={setDevShowGraphsY} fmt={v => v.toFixed(0)} />
-          <DevSlider label="GrBtn X" min={-300} max={700} step={1}
-            value={devShowGraphsBtnX} onChange={setDevShowGraphsBtnX} fmt={v => v.toFixed(0)} />
-          <DevSlider label="GrBtn Y" min={-300} max={700} step={1}
-            value={devShowGraphsBtnY} onChange={setDevShowGraphsBtnY} fmt={v => v.toFixed(0)} />
           <DevSlider label="GRAPHS X" min={-200} max={200} step={1}
             value={devGrBtnX} onChange={setDevGrBtnX} fmt={v => v.toFixed(0)} />
           <DevSlider label="GRAPHS Y" min={-200} max={200} step={1}
