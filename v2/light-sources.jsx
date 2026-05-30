@@ -998,6 +998,7 @@ export default function App() {
   const [devBtnYUV,           setDevBtnYUV]           = useState(0);
   const [devBtnYXRay,         setDevBtnYXRay]         = useState(0);
   const [devBtnYPhoto,        setDevBtnYPhoto]        = useState(0);
+  // Baked: SHOWGR X=15 Y=-30, GRBTN X=18 Y=-31, SCREEN X=3 Y=-3 W=131, BTN X=130 Y=-35, VIS Y=0 UV Y=6 XRAY Y=5 PHOTO Y=9
   // Baked: BTN_CX base +73, CYS [258,306,351,402,449]
   const [devMode, setDevMode] = useState(false);
   const [showGraphs, setShowGraphs] = useState(false);
@@ -1026,20 +1027,20 @@ export default function App() {
   const VIEWER_H = 630;
   const VIEWER_W = Math.round(VIEWER_H * 1369 / 1149); // ≈ 751
   const VS = VIEWER_H / 1149; // scale factor based on height
-  const SCREEN_L = 68 + devScreenX;
-  const SCREEN_T = 74 + devScreenY;
-  const SCREEN_W = Math.round(783 * VS) + 60 + devScreenW;
+  const SCREEN_L = 71 + devScreenX;
+  const SCREEN_T = 71 + devScreenY;
+  const SCREEN_W = Math.round(783 * VS) + 191 + devScreenW;
   const SCREEN_H = 495;
   const BENCH_TOP = 30; // bench marginTop in px
   // 4 circular band buttons — positions fine-tuned to the panel image
-  const BTN_CX  = Math.round(882 * VS) + 73 + devBtnX;
+  const BTN_CX  = Math.round(882 * VS) + 203 + devBtnX;
   const BTN_R   = Math.round(28  * VS);
   const BTN_CYS = [
-    258 + devBtnY,
-    306 + devBtnY + devBtnYVis,
-    351 + devBtnY + devBtnYUV,
-    402 + devBtnY + devBtnYXRay,
-    449 + devBtnY + devBtnYPhoto,
+    223 + devBtnY,
+    271 + devBtnY + devBtnYVis,
+    322 + devBtnY + devBtnYUV,
+    372 + devBtnY + devBtnYXRay,
+    423 + devBtnY + devBtnYPhoto,
   ];
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
@@ -1848,9 +1849,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 14 + devShowGraphsX,
+              left: 29 + devShowGraphsX,
               top: '50%',
-              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px))`,
+              transform: `translateY(calc(-50% - 108px + ${devShowGraphsY}px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowGraphs(g => !g)}>
@@ -1875,9 +1876,9 @@ export default function App() {
           <div
             style={{
               position: 'absolute',
-              left: 14 + devShowGraphsX,
+              left: 29 + devShowGraphsX,
               top: '50%',
-              transform: `translateY(calc(-50% - 78px + ${devShowGraphsY}px + 68px))`,
+              transform: `translateY(calc(-50% - 40px + ${devShowGraphsY}px))`,
               zIndex: 20, pointerEvents: 'auto', cursor: 'pointer',
             }}
             onClick={() => setShowTemp(t => !t)}>
@@ -2045,8 +2046,8 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 27 + devShowGraphsBtnX,
-            top: 222 + devShowGraphsBtnY,
+            left: 45 + devShowGraphsBtnX,
+            top: 191 + devShowGraphsBtnY,
             width: 35, height: 32, borderRadius: 6,
             background: showGraphs ? '#fe2b7180' : 'rgba(0,0,0,0)',
             border: `2px solid ${showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.4)'}`,
@@ -2065,8 +2066,8 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 27 + devShowGraphsBtnX,
-            top: 290 + devShowGraphsBtnY,
+            left: 45 + devShowGraphsBtnX,
+            top: 259 + devShowGraphsBtnY,
             width: 35, height: 32, borderRadius: 6,
             background: showTemp ? '#4e44ff80' : 'rgba(0,0,0,0)',
             border: `2px solid ${showTemp ? '#4e44ff' : 'rgba(78,68,255,0.4)'}`,
@@ -2085,8 +2086,8 @@ export default function App() {
         <div
           style={{
             position: 'absolute',
-            left: 29 + devShowGraphsBtnX,
-            top: 362 + devShowGraphsBtnY,
+            left: 47 + devShowGraphsBtnX,
+            top: 331 + devShowGraphsBtnY,
             width: 35, height: 32, borderRadius: 6,
             background: showDetector ? '#f24a3880' : 'rgba(0,0,0,0)',
             border: `1px solid ${showDetector ? '#f24a38' : 'rgba(242,74,56,0.4)'}`,
@@ -2103,7 +2104,7 @@ export default function App() {
         {/* ON label — directly below SHOW GRAPH text */}
         <div style={{
           position: 'absolute',
-          left: SCREEN_L + 14 + devShowGraphsX,
+          left: SCREEN_L + 29 + devShowGraphsX,
           top: 364,
           zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
           display: 'flex', alignItems: 'center', height: 32,
