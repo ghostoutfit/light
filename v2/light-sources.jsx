@@ -1978,15 +1978,16 @@ export default function App() {
           {showGraphs && graphItemId && (() => {
             const item = items.find(it => it.id === graphItemId);
             if (!item) return null;
+            const gW = Math.round((SCREEN_W - 70) * 0.7);
             return (
               <div style={{
-                position: 'absolute', left: 30, top: 72, width: Math.round((SCREEN_W - 70) * 0.7),
+                position: 'absolute', left: Math.round((SCREEN_W - gW) / 2), top: 72, width: gW,
                 paddingTop: 35, // offsets EmissionGraph's internal marginTop:-35 so background fills correctly
                 pointerEvents: 'none', zIndex: 15,
                 background: photoMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.65)',
                 borderBottom: photoMode ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.12)',
               }}>
-                <EmissionGraph item={item} bandRanges={bandRanges} width={Math.round((SCREEN_W - 70) * 0.7)}
+                <EmissionGraph item={item} bandRanges={bandRanges} width={gW}
                   devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
               </div>
             );
@@ -2019,7 +2020,7 @@ export default function App() {
             if (temp == null) return null;
             return (
               <div style={{
-                position: 'absolute', left: 30, bottom: 58,
+                position: 'absolute', left: 30, bottom: 40,
                 pointerEvents: 'none', zIndex: 15,
               }}>
                 <span style={{
