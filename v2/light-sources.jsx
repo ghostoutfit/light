@@ -1030,7 +1030,7 @@ export default function App() {
   const SCREEN_L = 71 + devScreenX;
   const SCREEN_T = 71 + devScreenY;
   const SCREEN_W = Math.round(783 * VS) + 191 + devScreenW;
-  const SCREEN_H = 495;
+  const SCREEN_H = 475;
   const BENCH_TOP = 30; // bench marginTop in px
   // 4 circular band buttons — positions fine-tuned to the panel image
   const BTN_CX  = Math.round(882 * VS) + 203 + devBtnX;
@@ -1980,13 +1980,13 @@ export default function App() {
             if (!item) return null;
             return (
               <div style={{
-                position: 'absolute', left: 30, top: 72, width: SCREEN_W - 70,
+                position: 'absolute', left: 30, top: 72, width: Math.round((SCREEN_W - 70) * 0.7),
                 paddingTop: 35, // offsets EmissionGraph's internal marginTop:-35 so background fills correctly
                 pointerEvents: 'none', zIndex: 15,
                 background: photoMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.65)',
                 borderBottom: photoMode ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.12)',
               }}>
-                <EmissionGraph item={item} bandRanges={bandRanges} width={SCREEN_W - 70}
+                <EmissionGraph item={item} bandRanges={bandRanges} width={Math.round((SCREEN_W - 70) * 0.7)}
                   devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
               </div>
             );
