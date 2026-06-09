@@ -2048,7 +2048,7 @@ export default function App() {
         <div style={{
           position: 'absolute',
           left: SCREEN_L + 29,
-          top: 376,
+          top: 346,
           zIndex: 3, pointerEvents: 'auto', cursor: 'pointer',
           display: 'flex', alignItems: 'center', height: 32,
         }}
