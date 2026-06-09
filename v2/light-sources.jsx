@@ -2207,7 +2207,7 @@ export default function App() {
         const isViewer = drag.type === 'viewer';
         const w = isViewer ? VIEWER_W : SOURCES[drag.type].w;
         const h = isViewer ? VIEWER_H : undefined;
-        const src = isViewer ? 'images/viewer.png' : SOURCES[drag.type].src;
+        const src = isViewer ? 'images/viewer.png?v=2' : SOURCES[drag.type].src;
         return (
           <div className="fixed pointer-events-none z-50"
             style={{ left: drag.cx - drag.ox, top: drag.cy - drag.oy, width: w, height: h }}>
