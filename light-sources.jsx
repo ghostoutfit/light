@@ -1026,7 +1026,7 @@ export default function App() {
 
           {/* Mode title — inside screen, top center */}
           {(() => {
-            const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
+            const titleMap = { IR: 'IR LIGHT', Visible: 'VISIBLE LIGHT', UV: 'UV LIGHT', XRay: 'XRAY LIGHT' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
             return (
               <div style={{

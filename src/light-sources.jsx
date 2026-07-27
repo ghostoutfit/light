@@ -878,6 +878,10 @@ function EmissionGraph({ item, bandRanges, width, devMode, selectedBand }) {
     val: bandIntensity(b.lo, b.hi, item.peak, item.widthHz, item.skew) * (item.amplitude / 400),
   }));
 
+  // Per-type visual scale for the graph curve only — does not affect detector output.
+  const GRAPH_VISUAL_SCALE = { remote: 0.6, radiator: 1.5 };
+  const graphVisScale = GRAPH_VISUAL_SCALE[item.type] ?? 1;
+
   // CEIL sets full-scale: amplitude=400 peaks at (1/CEIL)^PWR of graph height,
   // giving the power curve room to work rather than always slamming the top.
   const CEIL = 1.25, PWR = 1 / 1.25;
@@ -885,7 +889,7 @@ function EmissionGraph({ item, bandRanges, width, devMode, selectedBand }) {
   for (let i = 0; i <= GRAPH_SAMPLES; i++) {
     const t = i / GRAPH_SAMPLES;
     const f = FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, t);
-    const v = spectralEmission(f, item.peak, item.widthHz, item.skew) * (item.amplitude / 400);
+    const v = spectralEmission(f, item.peak, item.widthHz, item.skew) * (item.amplitude / 400) * graphVisScale;
     const vScaled = Math.pow(Math.min(v / CEIL, 1), PWR);
     const y = H - PAD - vScaled * (H - PAD * 2);
     pts.push([t * W, Math.max(PAD, y)]);
@@ -1095,9 +1099,60 @@ export default function App() {
 
   const benchRef = useRef(null);
   const partsRef = useRef(null);
+  const clickSlotsRef = useRef({ a: null, b: null, last: null });
 
   const updateItem = (id, patch) =>
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+
+  const clickPlaceSource = (type) => {
+    if (type === 'viewer') return;
+    const s = SOURCES[type];
+    const br = benchRef.current?.getBoundingClientRect();
+    const pr = partsRef.current?.getBoundingClientRect();
+    if (!br || !pr) return;
+
+    const imgH = s.w * (s.natH / s.natW);
+    const yPos = Math.round((br.height - imgH) * 0.35);
+    const slotAx = Math.round(pr.right - br.left + 20);
+    const slotBx = Math.round(window.innerWidth - br.left - 200 - s.w);
+
+    const newId = uid++;
+    const newItem = {
+      id: newId, type,
+      y: yPos,
+      amplitude: type === 'sun' ? 500 : 0,
+      skew: SLIDER_CFG[type].skewDefault ?? 3.0,
+      peak: SLIDER_CFG[type].peakDefault,
+      widthHz: SLIDER_CFG[type].widthDefault,
+      glowX: GLOW_DEFAULTS[type]?.glowX ?? 0,
+      glowY: GLOW_DEFAULTS[type]?.glowY ?? 0,
+      glowHue: GLOW_DEFAULTS[type]?.glowHue ?? null,
+      ...(type === 'gel' ? { gelBenchLayers: [
+        { on: true, opMult: 0.5  }, { on: true, opMult: 1.5  },
+        { on: true, opMult: 1.35 }, { on: true, opMult: 1.35, hue: 310, lightness: 75 },
+        { on: true, opMult: 0.9  },
+      ] } : {}),
+      ...(type === 'led' ? { ledLayers: [
+        { on: true, opacity: 0.85 }, { on: true, opacity: 1.0 },
+        { on: true, opacity: 0.85 }, { on: true, opacity: 0.9 },
+      ] } : {}),
+    };
+
+    const prev = clickSlotsRef.current;
+    if (!prev.a) {
+      setItems(its => [...its, { ...newItem, x: slotAx }]);
+      clickSlotsRef.current = { ...prev, a: newId, last: 'a' };
+    } else if (!prev.b) {
+      setItems(its => [...its, { ...newItem, x: slotBx }]);
+      clickSlotsRef.current = { ...prev, b: newId, last: 'b' };
+    } else {
+      const evict = prev.last === 'a' ? 'b' : 'a';
+      const evictId = prev[evict];
+      const x = evict === 'a' ? slotAx : slotBx;
+      setItems(its => [...its.filter(it => it.id !== evictId), { ...newItem, x }]);
+      clickSlotsRef.current = { ...prev, [evict]: newId, last: evict };
+    }
+  };
 
   const startPartsDrag = (e, type) => {
     e.preventDefault();
@@ -1169,6 +1224,9 @@ export default function App() {
       if (e.clientX >= pr.left && e.clientX <= pr.right &&
           e.clientY >= pr.top  && e.clientY <= pr.bottom) {
         setItems(prev => prev.filter(it => it.id !== drag.id));
+        const sl = clickSlotsRef.current;
+        if (sl.a === drag.id) clickSlotsRef.current = { a: null, b: sl.b, last: sl.b ? 'b' : null };
+        else if (sl.b === drag.id) clickSlotsRef.current = { a: sl.a, b: null, last: sl.a ? 'a' : null };
         setDrag(null);
         return;
       }
@@ -1187,9 +1245,9 @@ export default function App() {
         return;
       }
       if (drag.from === 'parts') {
-        // Require a real drag — ignore clicks or tiny movements
+        // Require a real drag; clicks snap the item to a bench slot instead
         const moved = Math.abs(e.clientX - drag.sx) > 40 || Math.abs(e.clientY - drag.sy) > 40;
-        if (!moved) { setDrag(null); return; }
+        if (!moved) { clickPlaceSource(drag.type); setDrag(null); return; }
         // New drop — only accept if pointer lands inside bench
         if (e.clientX >= br.left && e.clientX <= br.right &&
             e.clientY >= br.top  && e.clientY <= br.bottom) {
@@ -1341,7 +1399,7 @@ export default function App() {
           {items.length > 0 && (
             <button
               onPointerDown={e => e.stopPropagation()}
-              onClick={() => setItems([])}
+              onClick={() => { setItems([]); clickSlotsRef.current = { a: null, b: null, last: null }; }}
               style={{
                 marginTop: 4, width: '100%', padding: '3px 0',
                 fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase',
@@ -1382,6 +1440,9 @@ export default function App() {
           const panelW   = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
           const bgExtend = item.type === 'bulb' ? 35 : 0;
           const panelOff = Math.round((s.w - panelW) / 2);
+          const radiatorSlim = !devMode && item.type === 'radiator';
+          const effectivePanelW = radiatorSlim ? Math.round(panelW * 0.6) : panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0);
+          const effectivePanelLeft = radiatorSlim ? Math.round((s.w - effectivePanelW) / 2) : panelOff - bgExtend + (item.type === 'range' ? 20 : 0);
 
           return (
             <div key={item.id} className="absolute touch-none"
@@ -1393,8 +1454,8 @@ export default function App() {
                   top: '100%',
                   marginTop: item.type === 'range' ? -16 : -6,
                   background: 'rgba(0,0,0,0.65)',
-                  left: panelOff - bgExtend + (item.type === 'range' ? 20 : 0),
-                  width: panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0),
+                  left: effectivePanelLeft,
+                  width: effectivePanelW,
                   position: 'absolute',
                   zIndex: 65,
                 }}
@@ -1557,7 +1618,8 @@ export default function App() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-[8px] text-zinc-400 w-[28px] shrink-0 uppercase tracking-wide">Power</span>
                     <input type="range" min="0" max={item.type === 'radiator' ? 120 : 500} value={item.amplitude}
-                      className="flex-1 cursor-pointer accent-orange-400" style={{ height: '3px' }}
+                      className="flex-1 cursor-pointer accent-orange-400"
+                      style={{ height: '3px' }}
                       onChange={e => {
                         const v = +e.target.value;
                         const t = item.type === 'radiator' ? v / 120 : v / 500;
@@ -1604,7 +1666,7 @@ export default function App() {
                     cursor: 'grab',
                   }}
                   onPointerDown={(e) => startBenchDrag(e, item)} />
-                {item.type === 'bulb' && visIntensity > 0.005 && (() => {
+                {item.type === 'bulb' && visIntensity > 0.015 && (() => {
                   const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
                   const bulbR     = Math.pow(visC, 1.8); // gradual at low, steeper toward high
                   const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type];
@@ -1853,7 +1915,7 @@ export default function App() {
 
           {/* Mode title — always shown, including CAMERA MODE in None */}
           {(() => {
-            const titleMap = { IR: 'IR RADIATION', Visible: 'VISIBLE RADIATION', UV: 'UV RADIATION', XRay: 'XRAY RADIATION' };
+            const titleMap = { IR: 'INFRARED LIGHT', Visible: 'VISIBLE LIGHT', UV: 'ULTRAVIOLET LIGHT', XRay: 'XRAY LIGHT' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#aa22ff', XRay: '#44aaff' };
             const title = photoMode ? 'CAMERA MODE' : titleMap[selectedBand];
             const color = photoMode ? '#9df85c' : colorMap[selectedBand];
