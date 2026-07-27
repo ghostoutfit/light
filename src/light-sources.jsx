@@ -1666,39 +1666,42 @@ export default function App() {
                     cursor: 'grab',
                   }}
                   onPointerDown={(e) => startBenchDrag(e, item)} />
-                {item.type === 'bulb' && visIntensity > 0.015 && (() => {
+                {item.type === 'bulb' && (() => {
                   const bX = dev.benchX[item.type], bY = dev.benchY[item.type];
-                  const bulbR     = Math.pow(visC, 1.8); // gradual at low, steeper toward high
-                  const bulbBlurB = (42 + bulbR * 42) * dev.blurScale * dev.visBlur[item.type];
+                  const visBlurScale = 0.3;
+                  const benchVisScale    = 6.66 * visIntensity;
+                  const filamentVisScale = benchVisScale * 3.6;
                   const color = 'rgb(255,160,0)';
-                  const colorFilter      = `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]})`;
+                  const colorFilter         = `hue-rotate(${dev.visHue[item.type]}deg) saturate(${dev.visSat[item.type]})`;
                   const filamentColorFilter = `hue-rotate(${dev.visHue[item.type] - 20}deg) saturate(${dev.visSat[item.type]})`;
-                  return (
-                    <>
-                      {/* Outside — wide bloom */}
-                      <div style={{
+                  const layers = [];
+                  VIS_LAYERS.forEach((layer, i) => {
+                    const outerFadeIn    = clamp((benchVisScale    - layer.t) / 0.8, 0, 1);
+                    const filamentFadeIn = Math.pow(clamp((filamentVisScale - layer.t) / 0.8, 0, 1), 1.8);
+                    if (outerFadeIn > 0.01) layers.push(
+                      <div key={`o${i}`} style={{
                         position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
-                        filter: `blur(${bulbBlurB}px) brightness(${dev.bulbVisBright})`,
-                        opacity: bulbR * 0.95, mixBlendMode: 'screen',
+                        filter: `blur(${layer.blur * visBlurScale}px) brightness(${layer.bright})`,
+                        opacity: outerFadeIn * layer.opacity, mixBlendMode: 'screen',
                         isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
                       }}>
-                        <img src={s.outsideSrc} draggable={false}
-                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visBloom})` }} />
+                        <img src={s.outsideSrc} draggable={false} style={{ position: 'absolute', inset: 0, width: s.w, height: imgH }} />
                         <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: colorFilter }} />
                       </div>
-                      {/* Filament — tight core */}
-                      <div style={{
+                    );
+                    if (filamentFadeIn > 0.01) layers.push(
+                      <div key={`f${i}`} style={{
                         position: 'absolute', top: bY, left: bX, width: s.w, height: imgH,
-                        filter: `blur(${visBlurD}px) brightness(${dev.bulbVisBright * 0.5})`,
-                        opacity: clamp(visOp * dev.bulbVisBright / 2, 0, 1), mixBlendMode: 'screen',
+                        filter: `blur(${layer.blur * visBlurScale * 0.12}px) brightness(${layer.bright * 2})`,
+                        opacity: filamentFadeIn * layer.opacity, mixBlendMode: 'screen',
                         isolation: 'isolate', pointerEvents: 'none', backgroundColor: 'black',
                       }}>
-                        <img src={s.filamentSrc} draggable={false}
-                          style={{ position: 'absolute', inset: 0, width: s.w, height: imgH, filter: `brightness(${visSharp})` }} />
+                        <img src={s.filamentSrc} draggable={false} style={{ position: 'absolute', inset: 0, width: s.w, height: imgH }} />
                         <div style={{ position: 'absolute', inset: 0, backgroundColor: color, mixBlendMode: 'multiply', filter: filamentColorFilter }} />
                       </div>
-                    </>
-                  );
+                    );
+                  });
+                  return layers.length > 0 ? layers : null;
                 })()}
                 {/* Gel lamp — amplitude^0.5 ramp keeps building all the way to 100% */}
                 {item.type === 'gel' && item.amplitude > 0 && (() => {
