@@ -1,6 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; background: #000; }
+body { margin: 0; background: #000; font-family: 'Lexend', sans-serif; }
+body * { font-family: 'Lexend', sans-serif; }

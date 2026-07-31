@@ -1060,6 +1060,17 @@ export default function App() {
 
   const band = bandRanges.find(b => b.id === selectedBand);
 
+  const anyItemInView = showDetector && items.some(item => {
+    const s = SOURCES[item.type];
+    const imgH = s.w * (s.natH / s.natW);
+    const sl = viewerPos.x + SCREEN_L;
+    const st = viewerPos.y + SCREEN_T - BENCH_TOP;
+    return (
+      Math.min(item.x + s.w, sl + SCREEN_W) > Math.max(item.x, sl) &&
+      Math.min(item.y + imgH, st + SCREEN_H) > Math.max(item.y, st)
+    );
+  });
+
   // ── Graph-in-detector: which item's graph to show ─────────────
   useEffect(() => {
     if ((!showGraphs && !showTemp) || !showDetector || items.length === 0) {
@@ -1327,15 +1338,11 @@ export default function App() {
 
         {/* Parts box */}
         <div ref={partsRef}
-          className="absolute top-4 left-4 z-20 shadow-xl backdrop-blur-sm
-                     rounded-2xl px-3 pt-2 pb-3 flex flex-col gap-2
-                     border transition-colors duration-150"
-          style={{
-            background:  benchDragging ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0)',
-            borderColor: benchDragging ? 'rgba(255,90,60,0.5)' : 'rgba(255,255,255,0.18)',
-          }}>
+          className="absolute top-4 left-4 z-20 flex flex-col gap-2">
           {/* Detector toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px' }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px',
+            border: '3px solid rgba(80,80,80,0.8)', borderRadius: 10,
+            background: 'rgba(12,12,12,0.88)', backdropFilter: 'blur(8px)' }}
             onPointerDown={e => e.stopPropagation()}
             onClick={() => setShowDetector(d => !d)}>
             <img src="images/PowerOn.png" draggable={false}
@@ -1345,8 +1352,8 @@ export default function App() {
                 filter: showDetector ? 'drop-shadow(0 0 6px #f24a38cc)' : 'none',
               }} />
             <span style={{
-              fontSize: 22, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: 'black', cursor: 'pointer', userSelect: 'none', lineHeight: 1.1,
+              fontSize: 18, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: 'white', cursor: 'pointer', userSelect: 'none', lineHeight: 1.1,
             }}>
               Show<br />Detector
             </span>
@@ -1355,14 +1362,15 @@ export default function App() {
 
           {/* Source group renderer */}
           {[
-            { label: 'Heat Sources', color: 'rgba(251,146,60,0.7)', group: 'hot' },
-            { label: 'Other Sources', color: 'rgba(96,165,250,0.7)', group: 'specialized' },
-            ...(godMode ? [{ label: '✦ Secret', color: 'rgba(255,220,50,0.9)', group: 'secret' }] : []),
-          ].map(({ label, color, group }) => {
+            { label: 'Heat Sources', color: 'rgba(251,146,60,0.9)', group: 'hot', borderColor: '#8B2828' },
+            { label: 'Other Sources', color: 'rgba(96,165,250,0.9)', group: 'specialized', borderColor: '#1E65CC' },
+            ...(godMode ? [{ label: '✦ Secret', color: 'rgba(255,220,50,0.9)', group: 'secret', borderColor: 'rgba(255,220,50,0.5)' }] : []),
+          ].map(({ label, color, group, borderColor }) => {
             const groupSources = Object.entries(SOURCES).filter(([, s]) => s.group === group);
             return (
-              <div key={group}>
-                <p style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color, textAlign: 'left', marginBottom: 4 }}>
+              <div key={group} style={{ border: `3px solid ${borderColor}`, borderRadius: 10, padding: '6px 8px 4px',
+                background: 'rgba(12,12,12,0.88)', backdropFilter: 'blur(8px)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color, textAlign: 'left', marginBottom: 4 }}>
                   {label}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1383,19 +1391,18 @@ export default function App() {
                         <img src={s.src} alt={s.label} draggable={false}
                           className="drop-shadow pointer-events-none"
                           style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0 }} />
-                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, flex: 1 }}>
+                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3, flex: 1 }}>
                           {s.label}
                         </span>
-                        {placed && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>✓</span>}
+                        {placed && <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>✓</span>}
                       </div>
                     );
                   })}
                 </div>
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0 4px' }} />
               </div>
             );
           })}
-          <p className="text-white/20 text-[7px] text-center mt-0.5">drag back to remove</p>
+          <p className="text-white/20 text-[10px] text-center mt-0.5">drag back to remove</p>
           {items.length > 0 && (
             <button
               onPointerDown={e => e.stopPropagation()}
@@ -1438,7 +1445,7 @@ export default function App() {
             : `rgb(${Math.round(gamma(gr)*255)},${Math.round(gamma(gg)*255)},${Math.round(gamma(gb)*255)})`;
 
           const panelW   = item.type === 'tanbulb' ? Math.round(s.w * 0.85) : s.w;
-          const bgExtend = item.type === 'bulb' ? 35 : 0;
+          const bgExtend = item.type === 'bulb' ? 5 : 0;
           const panelOff = Math.round((s.w - panelW) / 2);
           const radiatorSlim = !devMode && item.type === 'radiator';
           const effectivePanelW = radiatorSlim ? Math.round(panelW * 0.6) : panelW + bgExtend * 2 - (item.type === 'range' ? 60 : 0);
@@ -1452,7 +1459,7 @@ export default function App() {
                            border border-white/10 backdrop-blur-sm"
                 style={{
                   top: '100%',
-                  marginTop: item.type === 'range' ? -16 : -6,
+                  marginTop: item.type === 'range' ? -16 : item.type === 'gel' ? -86 : item.type === 'bulb' ? 4 : item.type === 'radiator' ? -36 : -6,
                   background: 'rgba(0,0,0,0.65)',
                   left: effectivePanelLeft,
                   width: effectivePanelW,
@@ -1921,7 +1928,7 @@ export default function App() {
             const titleMap = { IR: 'INFRARED LIGHT', Visible: 'VISIBLE LIGHT', UV: 'ULTRAVIOLET LIGHT', XRay: 'XRAY LIGHT' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#aa22ff', XRay: '#44aaff' };
             const title = photoMode ? 'CAMERA MODE' : titleMap[selectedBand];
-            const color = photoMode ? '#9df85c' : colorMap[selectedBand];
+            const color = photoMode ? '#00ff44' : colorMap[selectedBand];
             return (
               <div style={{
                 position: 'absolute', top: 35, left: 0, right: 0,
@@ -1956,33 +1963,55 @@ export default function App() {
           })()}
 
           {/* None mode — screen is transparent; bench shows through physically. No content needed. */}
-          {!photoMode && (items.length === 0 ? (
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              height: '100%', textAlign: 'center', padding: 12,
-              color: '#3f3f46', fontSize: 10, lineHeight: 1.4,
-            }}>
-              Place a light source on the bench.
-            </div>
-          ) : (
-            /* Spectrum mode — translate bench coords into detector viewport */
-            <div style={{
-              position: 'absolute',
-              left: -(viewerPos.x + SCREEN_L),
-              top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
-            }}>
-              {items.map(item => {
-                const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
-                                * (item.amplitude / 400);
-                const s = SOURCES[item.type];
-                return (
-                  <React.Fragment key={item.id}>
-                    <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          ))}
+          {!photoMode && (<>
+            {/* Targeting reticle — shown when no source is in view */}
+            {!anyItemInView && (
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none', zIndex: 8,
+              }}>
+                <svg width={110} height={110} style={{ opacity: 0.65 }}>
+                  <circle cx={55} cy={55} r={46} fill="none" stroke="#9df85c" strokeWidth={1.5} strokeDasharray="4 5" />
+                  <circle cx={55} cy={55} r={7} fill="none" stroke="#9df85c" strokeWidth={1.5} />
+                  <line x1={55} y1={9}   x2={55} y2={46}  stroke="#9df85c" strokeWidth={1.5} />
+                  <line x1={55} y1={64}  x2={55} y2={101} stroke="#9df85c" strokeWidth={1.5} />
+                  <line x1={9}  y1={55}  x2={46} y2={55}  stroke="#9df85c" strokeWidth={1.5} />
+                  <line x1={64} y1={55}  x2={101} y2={55} stroke="#9df85c" strokeWidth={1.5} />
+                  <path d="M 18,18 L 18,28 M 18,18 L 28,18" stroke="#9df85c" strokeWidth={1.5} fill="none" />
+                  <path d="M 92,18 L 92,28 M 92,18 L 82,18" stroke="#9df85c" strokeWidth={1.5} fill="none" />
+                  <path d="M 18,92 L 18,82 M 18,92 L 28,92" stroke="#9df85c" strokeWidth={1.5} fill="none" />
+                  <path d="M 92,92 L 92,82 M 92,92 L 82,92" stroke="#9df85c" strokeWidth={1.5} fill="none" />
+                </svg>
+                <span style={{
+                  marginTop: 10, fontSize: 13, fontWeight: 600, letterSpacing: '0.18em',
+                  color: '#9df85c', textShadow: '0 0 8px #9df85c88',
+                  textTransform: 'uppercase', userSelect: 'none',
+                }}>
+                  {items.length === 0 ? 'No Source' : 'Out of View'}
+                </span>
+              </div>
+            )}
+            {/* Spectrum mode — translate bench coords into detector viewport */}
+            {items.length > 0 && (
+              <div style={{
+                position: 'absolute',
+                left: -(viewerPos.x + SCREEN_L),
+                top:  -(viewerPos.y + SCREEN_T) + BENCH_TOP,
+              }}>
+                {items.map(item => {
+                  const intensity = bandIntensity(band.lo, band.hi, item.peak, item.widthHz, item.skew)
+                                  * (item.amplitude / 400);
+                  const s = SOURCES[item.type];
+                  return (
+                    <React.Fragment key={item.id}>
+                      <EmissionShape item={item} band={band} intensity={intensity} dev={dev} />
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
+          </>)}
 
           {/* Graph overlay — below mode title (top ~75px) */}
           {showGraphs && graphItemId && (() => {
