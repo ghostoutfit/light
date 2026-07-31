@@ -236,7 +236,7 @@ const SOURCES = {
     group: 'specialized',
   },
   xray: {
-    label: 'X Ray Source',
+    label: 'X-Ray Source',
     src:          'images/XRayEmitter.png',
     sourceSrc:    'images/XRaySource.png',
     reflectorSrc: 'images/XRayReflector.png',
@@ -938,7 +938,7 @@ function EmissionGraph({ item, bandRanges, width, devMode, selectedBand }) {
         <path d={d} fill="none" stroke="rgba(255,255,255,1)" strokeWidth={1.5} />
         {/* Band labels */}
         {bandRanges.map(b => {
-          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'X-RAY' };
           const x1 = hzToPos(b.lo) * W;
           const x2 = hzToPos(b.hi) * W;
           const cx = (x1 + x2) / 2;
@@ -1123,6 +1123,42 @@ export default function App() {
     if (!br || !pr) return;
 
     const imgH = s.w * (s.natH / s.natW);
+
+    // If detector is visible and no source is currently in its view, place new item at detector center
+    if (showDetector && !items.some(item => {
+      const si = SOURCES[item.type];
+      const ih = si.w * (si.natH / si.natW);
+      const sl = viewerPos.x + SCREEN_L;
+      const st = viewerPos.y + SCREEN_T - BENCH_TOP;
+      return (
+        Math.min(item.x + si.w, sl + SCREEN_W) > Math.max(item.x, sl) &&
+        Math.min(item.y + ih, st + SCREEN_H) > Math.max(item.y, st)
+      );
+    })) {
+      const cx = Math.round(viewerPos.x + SCREEN_L + SCREEN_W / 2 - s.w / 2);
+      const cy = Math.round(viewerPos.y + SCREEN_T + SCREEN_H / 2 - imgH / 2 - BENCH_TOP);
+      setItems(its => [...its, {
+        id: uid++, type, x: cx, y: cy,
+        amplitude: type === 'sun' ? 500 : 0,
+        skew: SLIDER_CFG[type].skewDefault ?? 3.0,
+        peak: SLIDER_CFG[type].peakDefault,
+        widthHz: SLIDER_CFG[type].widthDefault,
+        glowX: GLOW_DEFAULTS[type]?.glowX ?? 0,
+        glowY: GLOW_DEFAULTS[type]?.glowY ?? 0,
+        glowHue: GLOW_DEFAULTS[type]?.glowHue ?? null,
+        ...(type === 'gel' ? { gelBenchLayers: [
+          { on: true, opMult: 0.5  }, { on: true, opMult: 1.5  },
+          { on: true, opMult: 1.35 }, { on: true, opMult: 1.35, hue: 310, lightness: 75 },
+          { on: true, opMult: 0.9  },
+        ] } : {}),
+        ...(type === 'led' ? { ledLayers: [
+          { on: true, opacity: 0.85 }, { on: true, opacity: 1.0 },
+          { on: true, opacity: 0.85 }, { on: true, opacity: 0.9 },
+        ] } : {}),
+      }]);
+      return;
+    }
+
     const yPos = Math.round((br.height - imgH) * 0.35);
     const slotAx = Math.round(pr.right - br.left + 20);
     const slotBx = Math.round(window.innerWidth - br.left - 200 - s.w);
@@ -1925,7 +1961,7 @@ export default function App() {
 
           {/* Mode title — always shown, including CAMERA MODE in None */}
           {(() => {
-            const titleMap = { IR: 'INFRARED LIGHT', Visible: 'VISIBLE LIGHT', UV: 'ULTRAVIOLET LIGHT', XRay: 'XRAY LIGHT' };
+            const titleMap = { IR: 'INFRARED LIGHT', Visible: 'VISIBLE LIGHT', UV: 'ULTRAVIOLET LIGHT', XRay: 'X-RAY LIGHT' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#aa22ff', XRay: '#44aaff' };
             const title = photoMode ? 'CAMERA MODE' : titleMap[selectedBand];
             const color = photoMode ? '#00ff44' : colorMap[selectedBand];
@@ -2233,7 +2269,7 @@ export default function App() {
           );
         })}
 
-        {/* Photo mode button — 5th button below XRAY */}
+        {/* Photo mode button — 5th button below X-RAY */}
         {(() => {
           const photoColor = '#a0b8a0';
           const photoBtnActive = '#607860';
