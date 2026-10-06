@@ -1001,6 +1001,7 @@ export default function App() {
     const handler = e => {
       buf = (buf + e.key).slice(-maxLen);
       if (secrets.some(s => buf.endsWith(s))) setGodMode(true);
+      if (buf.endsWith('dev')) { setDevMode(d => !d); buf = ''; }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -1340,27 +1341,7 @@ export default function App() {
       onPointerMove={onMove}
       onPointerUp={onUp}
     >
-      {/* Dev mode + Show Graphs checkboxes — upper left */}
-      <div style={{
-        position: 'fixed', top: 6, left: 8, zIndex: 100,
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <input
-            id="devMode"
-            type="checkbox"
-            checked={devMode}
-            onChange={e => setDevMode(e.target.checked)}
-            style={{ accentColor: '#a855f7', width: 11, height: 11, cursor: 'pointer' }}
-          />
-          <label htmlFor="devMode" style={{
-            fontSize: 9, color: 'black', cursor: 'pointer', userSelect: 'none',
-          }}>
-            Dev Mode
-          </label>
-        </div>
-      </div>
-
+      {/* Dev mode toggles by typing "dev" — hidden, no UI */}
 
       {/* ══════════════════════════════════════════
           TOP HALF — Lab Bench
@@ -2210,7 +2191,7 @@ export default function App() {
         {/* Band selector buttons + labels */}
         {BANDS.map((b, i) => {
           const isActive = !photoMode && selectedBand === b.id;
-          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'X-RAY' };
           const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
           return (
             <div key={b.id}>

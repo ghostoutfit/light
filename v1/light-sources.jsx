@@ -456,7 +456,7 @@ function EmissionGraph({ item, bandRanges, width, devMode }) {
         <path d={d} fill="none" stroke="rgba(255,255,255,1)" strokeWidth={1.5} />
         {/* Band labels */}
         {bandRanges.map(b => {
-          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'X-RAY' };
           const x1 = hzToPos(b.lo) * W;
           const x2 = hzToPos(b.hi) * W;
           const cx = (x1 + x2) / 2;
@@ -1026,7 +1026,7 @@ export default function App() {
 
           {/* Mode title — inside screen, top center */}
           {(() => {
-            const titleMap = { IR: 'IR LIGHT', Visible: 'VISIBLE LIGHT', UV: 'UV LIGHT', XRay: 'XRAY LIGHT' };
+            const titleMap = { IR: 'IR LIGHT', Visible: 'VISIBLE LIGHT', UV: 'UV LIGHT', XRay: 'X-RAY LIGHT' };
             const colorMap = { IR: '#ff6622', Visible: '#d4c060', UV: '#cc44ff', XRay: '#44aaff' };
             return (
               <div style={{
@@ -1110,7 +1110,7 @@ export default function App() {
         {/* Band selector buttons + labels */}
         {BANDS.map((b, i) => {
           const isActive = selectedBand === b.id;
-          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'XRAY' };
+          const labelMap = { IR: 'IR', Visible: 'VIS', UV: 'UV', XRay: 'X-RAY' };
           // Right-justify all labels so their right edge aligns with where "R" in IR sat at 11px
           // axis_x ≈ BTN_CX - BTN_R - 6  →  right = VIEWER_W - axis_x
           const labelRight = VIEWER_W - (BTN_CX - BTN_R - 6);
