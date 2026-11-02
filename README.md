@@ -7,12 +7,8 @@ Visible, Ultraviolet, X-Ray, and plain Camera views to see how each source looks
 in that slice of the spectrum.
 
 - **Run it:** `npm run dev` (Vite dev server). **Build:** `npm run build`.
-- **Live source file:** `src/light-sources.jsx` — this is the whole app.
+- **Source file:** `src/light-sources.jsx` — this is the whole app.
   (Entry point `src/main.jsx` just mounts it.)
-
-> ⚠️ There are stale copies at `light-sources.jsx` (repo root) and
-> `v1/light-sources.jsx` that are **not** imported anywhere. Ignore them — only
-> `src/light-sources.jsx` is live.
 
 ## The one physics idea
 
