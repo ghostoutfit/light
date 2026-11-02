@@ -1,3 +1,34 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  LIGHT SOURCES AND DETECTORS  —  interactive optics lab (single React file)
+// ═══════════════════════════════════════════════════════════════════════════
+//  The user drags light/heat sources (radiator, bulb, LED, X-ray tube, the Sun…)
+//  onto a lab bench, then points a camera "detector" at them. The detector can
+//  view in Infrared, Visible, Ultraviolet, X-Ray, or plain Camera mode, and the
+//  scene re-renders to show how each source looks in that slice of the spectrum.
+//
+//  ── The one physics idea everything rests on ──────────────────────────────
+//  Every source emits a SPECTRUM: a curve of brightness vs. frequency, modeled
+//  here as a (skewed) log-normal bump. Two functions do the heavy lifting:
+//    • spectralEmission() — the curve's height at one frequency.
+//    • bandIntensity()    — how much of the curve falls inside a camera band
+//                           (IR / Visible / UV / X-Ray). That single number
+//                           drives how bright the source's glow is drawn.
+//  Rendering is then just stacking blurred copies of the source's PNG ("glow
+//  layers"), with opacity scaled by that intensity.
+//
+//  ── File layout (top → bottom) ────────────────────────────────────────────
+//    1. Physics & math helpers      (clamp, spectralEmission, bandIntensity, …)
+//    2. Per-source slider config    (SLIDER_CFG: each source's peak/width/skew)
+//    3. Spectrum → colour           (cieCmf, spectrumToRgb — for the naked eye)
+//    4. Glow scaling & palettes      (thermalScale, THERMAL, VIS_LAYERS)
+//    5. Data catalogs               (SOURCES, BANDS, frequency axis, TEMP_CFG)
+//    6. Render components           (EmissionShape, NaturalView, EmissionGraph, DevSlider)
+//    7. App                         (all state, drag handlers, and the full UI)
+//
+//  No routing, no global store — App holds all state and passes it down.
+//  Type "dev" to toggle hidden tuning sliders; type a secret word to unlock the Sun.
+// ═══════════════════════════════════════════════════════════════════════════
+
 import React, { useState, useRef, useEffect } from 'react';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -975,6 +1006,11 @@ function DevSlider({ label, min, max, step, value, onChange, fmt }) {
 
 // ── App ───────────────────────────────────────────────────────
 export default function App() {
+  // ── State ────────────────────────────────────────────────────
+  // items = every source placed on the bench (each has type, x/y, amplitude =
+  // power, and spectrum params peak/width/skew). The rest track the current
+  // drag, which camera band is selected, the frequency-band dividers, and the
+  // various mode toggles (dev panel, god/secret mode, detector on/off).
   const [items,        setItems]        = useState([]);
   const [drag,         setDrag]         = useState(null);
   const [selectedBand, setSelectedBand] = useState('Visible');
@@ -1032,6 +1068,10 @@ export default function App() {
     372,
     423,
   ];
+  // `dev` bundles all the hand-tuned rendering magic numbers (blur amounts, glow
+  // brightness, per-source position nudges) into one object passed down to the
+  // render components. Most were dialed in live via the hidden dev sliders, then
+  // baked to constants here.
   const dev = { blurScale: devBlurScale, glowPower: 0.5, glowScale: 6.0, glowX: 4, glowY: -2,
     bulbVisBright: devBulbVisBright, bulbCamMax: devBulbCamMax,
     bulbOutsideBlur: 22, bulbFilamentBlur: 1,
@@ -1113,6 +1153,10 @@ export default function App() {
   const partsRef = useRef(null);
   const clickSlotsRef = useRef({ a: null, b: null, last: null });
 
+  // ── Handlers: place & drag sources ───────────────────────────
+  // updateItem patches one source's fields. clickPlaceSource drops a new source
+  // by clicking (into a free bench slot, or the detector's view). The start*Drag
+  // helpers begin a drag from the parts panel, the bench, or a band divider.
   const updateItem = (id, patch) =>
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
 
@@ -1233,6 +1277,10 @@ export default function App() {
     setDivDrag({ idx, barLeft, barWidth });
   };
 
+  // ── Pointer move / up — live drag + drop ─────────────────────
+  // onMove updates whatever is being dragged (the detector, a band divider, or
+  // a bench source). onUp finishes the drag: dropping a source back on the parts
+  // panel removes it; a click (tiny movement) places into a slot instead.
   const onMove = (e) => {
     if (viewerDrag) {
       setViewerPos({ x: e.clientX - viewerDrag.ox, y: e.clientY - viewerDrag.oy });
