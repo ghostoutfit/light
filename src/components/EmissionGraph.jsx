@@ -6,7 +6,15 @@ import { SOURCES } from '../sources/index.js';
 
 const GRAPH_SAMPLES = 120;
 
-export default function EmissionGraph({ item, bandRanges, width, devMode, selectedBand }) {
+// Band label colour: the band's colour mixed toward white (dark graph) or black (light
+// graph, in Camera mode) so the label stands out from its own tinted band.
+function labelFill(hex, onLight) {
+  const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255];
+  const mix = onLight ? c.map(v => v * 0.45) : c.map(v => v + (255 - v) * 0.9);
+  return `rgb(${mix.map(Math.round).join(',')})`;
+}
+
+export default function EmissionGraph({ item, bandRanges, width, devMode, selectedBand, onLight = false }) {
   const H = 53; // 44 × 1.2
   const W = width;
   const Y_MAX = 80;
@@ -80,7 +88,7 @@ export default function EmissionGraph({ item, bandRanges, width, devMode, select
           return (
             <text key={b.id} x={cx} y={H / 2}
               textAnchor="middle" dominantBaseline="middle" fontSize={12} fontFamily="monospace"
-              fill={b.divColor} opacity={0.9} style={{ userSelect: 'none' }}>
+              fill={labelFill(b.divColor, onLight)} opacity={0.9} style={{ userSelect: 'none' }}>
               {b.short}
             </text>
           );

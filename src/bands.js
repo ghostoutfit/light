@@ -3,6 +3,7 @@
 // the dividers in App (see bandRanges there).
 //   short / title  — the button label and the screen heading
 //   divColor       — the band's colour on graphs and its active button label
+//                    (labelColor, if set, overrides it for that label)
 //   glowColor      — the active button's glow
 //   titleColor     — the screen heading's colour
 //   colorFilter    — CSS filter that tints a glow image into the band's false colour
@@ -36,6 +37,7 @@ export const BANDS = [
     id: 'XRay',    label: 'X-Ray',       freq: 12000,
     short: 'X-RAY', title: 'X-RAY LIGHT',       titleColor: '#44aaff',
     divColor: '#2060a0',
+    labelColor: '#3670aa',   // active button label: a touch lighter than divColor for contrast
     btnActive: '#1e4a7a',
     glowColor: '#75e0ff',
     colorFilter: 'sepia(1) saturate(5) hue-rotate(195deg) brightness(1.4)',

@@ -11,11 +11,12 @@ import { VIEWER_W, VIEWER_H, SCREEN_L, SCREEN_T, SCREEN_W, SCREEN_H, BENCH_TOP,
          BTN_CX, BTN_R, BTN_CYS, viewOverlap } from '../detectorGeometry.js';
 import EmissionShape from './EmissionShape.jsx';
 import EmissionGraph from './EmissionGraph.jsx';
+import CloseButton from './CloseButton.jsx';
 
 export default function Detector({
   items, band, bandRanges, selectedBand, setSelectedBand, photoMode, setPhotoMode,
   showGraphs, setShowGraphs, showTemp, setShowTemp, showDetector, setShowDetector,
-  viewerPos, viewerDrag, setViewerDrag, anyItemInView, graphItemId, devMode,
+  viewerPos, viewerDrag, setViewerDrag, anyItemInView, graphItemId, devMode, selected, onSelect, onHide,
 }) {
   return (
       <div
@@ -26,9 +27,21 @@ export default function Detector({
           cursor: viewerDrag ? 'grabbing' : 'grab',
         }}
         onPointerDown={e => {
+          e.stopPropagation();   // a press here selects the detector, even over a source behind it
+          onSelect();
           setViewerDrag({ ox: e.clientX - viewerPos.x, oy: e.clientY - viewerPos.y });
         }}
       >
+        {/* Selected (the arrow keys move it): dashed outline, fitted to the artwork */}
+        {selected && <div style={{
+          position: 'absolute', left: 1, right: 1, top: 26, bottom: 46,
+          border: '2px dashed rgba(255,255,255,0.8)', borderRadius: 24,
+          pointerEvents: 'none', zIndex: 4,
+        }} />}
+        {/* …with a × on its top-right corner that hides the detector */}
+        {selected && <CloseButton onClick={onHide} label="Hide detector"
+          style={{ position: 'absolute', top: 26 - 8, right: 1 - 8, zIndex: 11 }} />}
+
         {/* Screen — behind the viewer image, visible through its transparent center */}
         <div
           style={{
@@ -51,7 +64,7 @@ export default function Detector({
             <span style={{
               fontFamily: '"Courier New", Courier, monospace',
               fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
-              color: showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.6)',
+              color: showGraphs ? '#fe2b71' : 'rgba(254,43,113,0.8)',
               textShadow: showGraphs ? [
                 '0 0 2px #fe2b71',
                 '0 0 8px #fe2b71dd',
@@ -78,7 +91,7 @@ export default function Detector({
             <span style={{
               fontFamily: '"Courier New", Courier, monospace',
               fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
-              color: showTemp ? '#4e44ff' : 'rgba(78,68,255,0.6)',
+              color: '#4e44ff',  // off = same colour without the glow (any dimmer fails contrast on black)
               textShadow: showTemp ? [
                 '0 0 2px #4e44ff',
                 '0 0 8px #4e44ffdd',
@@ -197,7 +210,7 @@ export default function Detector({
                 borderBottom: photoMode ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.12)',
               }}>
                 <EmissionGraph item={item} bandRanges={bandRanges} width={gW}
-                  devMode={devMode} selectedBand={photoMode ? null : selectedBand} />
+                  devMode={devMode} selectedBand={photoMode ? null : selectedBand} onLight={photoMode} />
               </div>
             );
           })()}
@@ -345,7 +358,7 @@ export default function Detector({
                 <span style={{
                   fontFamily: '"Courier New", Courier, monospace',
                   fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
-                  color: isActive ? b.divColor : 'rgba(255,255,255,0.28)',
+                  color: isActive ? (b.labelColor ?? b.divColor) : 'rgba(255,255,255,0.42)',
                   textShadow: isActive ? [
                     `0 0 2px ${b.divColor}`,
                     `0 0 8px ${b.divColor}dd`,
@@ -407,7 +420,7 @@ export default function Detector({
                 <span style={{
                   fontFamily: '"Courier New", Courier, monospace',
                   fontSize: 22, fontWeight: 'bold', letterSpacing: '0.08em',
-                  color: photoMode ? photoGlow : 'rgba(255,255,255,0.28)',
+                  color: photoMode ? photoGlow : 'rgba(255,255,255,0.42)',
                   textShadow: photoMode ? [
                     `0 0 2px ${photoGlow}`,
                     `0 0 8px ${photoGlow}dd`,

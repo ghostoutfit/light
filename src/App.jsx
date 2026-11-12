@@ -56,6 +56,8 @@ export default function App() {
   const [viewerDrag, setViewerDrag] = useState(null); // { ox, oy }
   const [showDetector, setShowDetector] = useState(false);
   const [graphItemId,  setGraphItemId]  = useState(null);
+  // What the arrow keys move: { kind: 'item', id } (a bench source) or { kind: 'detector' }
+  const [selected, setSelected] = useState(null);
   const graphItemIdRef = useRef(null);
   graphItemIdRef.current = graphItemId;
 
@@ -97,6 +99,30 @@ export default function App() {
     setGraphItemId(best.id);
   }, [showGraphs, showTemp, showDetector, items, viewerPos]);
 
+  // ── Keyboard: arrows move the selected source or detector ────
+  // 10 px per press (50 px with Shift). Delete / Backspace removes a selected source;
+  // Esc deselects. Keys pressed while typing in a field or using a slider are left alone.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!selected || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (selected.kind === 'detector' && !showDetector) return;
+      if (e.key === 'Escape') { setSelected(null); return; }
+      if (selected.kind === 'item' && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault(); removeItem(selected.id); return;
+      }
+      const step = e.shiftKey ? 50 : 10;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      if (selected.kind === 'detector') setViewerPos(p => ({ x: p.x + d[0], y: p.y + d[1] }));
+      else setItems(prev => prev.map(it => it.id === selected.id ? { ...it, x: it.x + d[0], y: it.y + d[1] } : it));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const benchRef = useRef(null);
   const partsRef = useRef(null);
   const clickSlotsRef = useRef({ a: null, b: null, last: null });
@@ -107,6 +133,22 @@ export default function App() {
   // helpers begin a drag from the parts panel, the bench, or a band divider.
   const updateItem = (id, patch) =>
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+
+  // Take a source off the bench (× button, Delete key, or dragging it back to the parts panel).
+  const removeItem = (id) => {
+    setItems(prev => prev.filter(it => it.id !== id));
+    const sl = clickSlotsRef.current;
+    if (sl.a === id) clickSlotsRef.current = { a: null, b: sl.b, last: sl.b ? 'b' : null };
+    else if (sl.b === id) clickSlotsRef.current = { a: sl.a, b: null, last: sl.a ? 'a' : null };
+    setSelected(sel => sel?.kind === 'item' && sel.id === id ? null : sel);
+  };
+
+  // Select a source or the detector so the arrow keys move it. Blur any focused slider
+  // first, or the arrows would keep changing that slider instead.
+  const select = (sel) => {
+    document.activeElement?.blur?.();
+    setSelected(sel);
+  };
 
   const clickPlaceSource = (type) => {
     if (type === 'viewer') return;
@@ -161,6 +203,7 @@ export default function App() {
   const startBenchDrag = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
+    select({ kind: 'item', id: item.id });
     const r = e.currentTarget.getBoundingClientRect();
     setDrag({
       from: 'bench', type: item.type, id: item.id,
@@ -219,10 +262,7 @@ export default function App() {
       const pr = partsRef.current.getBoundingClientRect();
       if (e.clientX >= pr.left && e.clientX <= pr.right &&
           e.clientY >= pr.top  && e.clientY <= pr.bottom) {
-        setItems(prev => prev.filter(it => it.id !== drag.id));
-        const sl = clickSlotsRef.current;
-        if (sl.a === drag.id) clickSlotsRef.current = { a: null, b: sl.b, last: sl.b ? 'b' : null };
-        else if (sl.b === drag.id) clickSlotsRef.current = { a: sl.a, b: null, last: sl.a ? 'a' : null };
+        removeItem(drag.id);
         setDrag(null);
         return;
       }
@@ -265,6 +305,7 @@ export default function App() {
       style={{ cursor: viewerDrag ? 'grabbing' : divDrag ? 'col-resize' : undefined }}
       onPointerMove={onMove}
       onPointerUp={onUp}
+      onPointerDown={() => setSelected(null)}  // a press on anything that doesn't select deselects
     >
       {/* Dev mode toggles by typing "dev" — hidden, no UI */}
 
@@ -280,14 +321,17 @@ export default function App() {
 
         <PartsPanel panelRef={partsRef} showDetector={showDetector} setShowDetector={setShowDetector}
           godMode={godMode} items={items} startPartsDrag={startPartsDrag}
-          onClearAll={() => { setItems([]); clickSlotsRef.current = { a: null, b: null, last: null }; }} />
+          onClearAll={() => { setItems([]); setSelected(null); clickSlotsRef.current = { a: null, b: null, last: null }; }} />
 
         {/* Bench items — sliders above */}
         {items.map(item => (
           <BenchItem key={item.id} item={item}
             isBeingDragged={drag?.from === 'bench' && drag.id === item.id}
             devMode={devMode} showGraphs={showGraphs} bandRanges={bandRanges} selectedBand={selectedBand}
-            updateItem={updateItem} startBenchDrag={startBenchDrag} />
+            updateItem={updateItem} startBenchDrag={startBenchDrag}
+            selected={selected?.kind === 'item' && selected.id === item.id}
+            onPanelPress={() => setSelected(null)}   // the panel's slider takes the arrow keys instead
+            onDelete={() => removeItem(item.id)} />
         ))}
 
       </div>
@@ -304,7 +348,9 @@ export default function App() {
         showTemp={showTemp} setShowTemp={setShowTemp}
         showDetector={showDetector} setShowDetector={setShowDetector}
         viewerPos={viewerPos} viewerDrag={viewerDrag} setViewerDrag={setViewerDrag}
-        anyItemInView={anyItemInView} graphItemId={graphItemId} devMode={devMode} />}
+        anyItemInView={anyItemInView} graphItemId={graphItemId} devMode={devMode}
+        selected={selected?.kind === 'detector'} onSelect={() => select({ kind: 'detector' })}
+        onHide={() => { setShowDetector(false); setSelected(null); }} />}
 
       {/* Global drag ghost — only for drags from the parts panel */}
       {drag && drag.from !== 'bench' && (() => {

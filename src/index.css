@@ -7,3 +7,15 @@
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; background: #000; font-family: 'Lexend', sans-serif; }
 body * { font-family: 'Lexend', sans-serif; }
+
+/* Show Detector panel: a red halo (the ON button's colour) that pulses slowly while the
+   detector is off, to draw attention to it, and stays lit while it's on. */
+@keyframes detector-halo {
+  0%, 100% { box-shadow: 0 0 4px 1px #f24a3880; }
+  50%      { box-shadow: 0 0 10px 3px #f24a38ff, 0 0 24px 8px #f24a3899; }
+}
+.detector-halo    { animation: detector-halo 2s ease-in-out infinite; }
+.detector-halo.on { animation: none; box-shadow: 0 0 10px 3px #f24a38cc, 0 0 24px 8px #f24a3866; }
+@media (prefers-reduced-motion: reduce) {
+  .detector-halo { animation: none; box-shadow: 0 0 10px 3px #f24a38cc, 0 0 24px 8px #f24a3866; }
+}
