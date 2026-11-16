@@ -1,0 +1,72 @@
+/* Light Sources and Detectors — page styles. Most styling is inline, next to the code
+   that builds each element (js/); this file has the page reset and the shared classes. */
+
+/* ── Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; border: 0 solid #e5e7eb; }
+html { line-height: 1.5; -webkit-text-size-adjust: 100%; tab-size: 4; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; line-height: inherit; background: #000; font-family: 'Lexend', sans-serif; }
+body * { font-family: 'Lexend', sans-serif; }
+p { margin: 0; }
+button, input {
+  font-family: inherit; font-size: 100%; font-weight: inherit; line-height: inherit;
+  letter-spacing: inherit; color: inherit; margin: 0; padding: 0;
+}
+button { text-transform: none; -webkit-appearance: button; background-color: transparent; background-image: none; cursor: pointer; }
+:disabled { cursor: default; }
+img, svg { display: block; vertical-align: middle; }
+img { max-width: 100%; height: auto; }
+
+/* ── Page ──────────────────────────────────────────────────── */
+#app { height: 100vh; width: 100vw; display: flex; flex-direction: column; user-select: none; overflow: hidden; }
+.bench { position: relative; flex: 1 1 0%; }
+.table {
+  position: absolute; pointer-events: none;
+  top: -55px; right: 0; left: 0; width: 100%; height: calc(100% + 55px);
+  object-fit: cover; object-position: right center;
+}
+
+/* ── Parts panel (js/ui/parts.js) ──────────────────────────── */
+.parts { position: absolute; top: 1rem; left: 1rem; z-index: 20; display: flex; flex-direction: column; gap: .5rem; }
+.part { touch-action: none; }
+.parts-hint { color: rgb(255 255 255 / .7); font-size: 10px; text-align: center; margin-top: .125rem; }
+
+/* Show Detector panel: a red halo (the ON button's colour) that pulses slowly while the
+   detector is off, to draw attention to it, and stays lit while it's on. */
+@keyframes detector-halo {
+  0%, 100% { box-shadow: 0 0 4px 1px #f24a3880; }
+  50%      { box-shadow: 0 0 10px 3px #f24a38ff, 0 0 24px 8px #f24a3899; }
+}
+.detector-halo    { animation: detector-halo 2s ease-in-out infinite; }
+.detector-halo.on { animation: none; box-shadow: 0 0 10px 3px #f24a38cc, 0 0 24px 8px #f24a3866; }
+@media (prefers-reduced-motion: reduce) {
+  .detector-halo { animation: none; box-shadow: 0 0 10px 3px #f24a38cc, 0 0 24px 8px #f24a3866; }
+}
+
+/* ── Bench items (js/ui/bench.js) ──────────────────────────── */
+.bench-item { position: absolute; touch-action: none; }
+/* The control panel under each source (power slider, or the dev sliders) */
+.item-panel {
+  position: absolute; top: 100%; z-index: 65;
+  display: flex; flex-direction: column; gap: .375rem;
+  padding: .5rem; border-radius: .5rem;
+  border: 1px solid rgb(255 255 255 / .1);
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(4px);
+}
+/* A slider row: [label] [min] [——slider——] [value] */
+.panel-row  { display: flex; align-items: center; gap: .375rem; }
+.row-label  { font-size: 8px; color: #a1a1aa; width: 28px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .025em; }
+.row-slider { flex: 1 1 0%; cursor: pointer; }
+.row-min    { font-size: 7px; color: #52525b; flex-shrink: 0; }
+.row-value  { font-size: 7px; color: #71717a; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.row-value.amp { font-size: 8px; width: 24px; flex-shrink: 1; }
+.row-value.w28 { width: 28px; }
+.row-value.w32 { width: 32px; }
+.row-value.w40 { width: 40px; }
+
+.drop-shadow    { filter: drop-shadow(0 1px 2px rgb(0 0 0 / .1)) drop-shadow(0 1px 1px rgb(0 0 0 / .06)); }
+.drop-shadow-lg { filter: drop-shadow(0 10px 8px rgb(0 0 0 / .04)) drop-shadow(0 4px 3px rgb(0 0 0 / .1)); }
+
+/* ── Drag ghost (js/pointer.js) ────────────────────────────── */
+.ghost     { position: fixed; pointer-events: none; z-index: 50; }
+.ghost-img { opacity: .9; }
