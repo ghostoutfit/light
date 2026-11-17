@@ -115,6 +115,7 @@ function bench({ s, imgH, vis }) {
 
 export default {
   label: 'Filament Bulb',
+  short: 'Bulb',
   group: 'hot',
   src:         'images/Bulb.png',
   outsideSrc:  'images/BulbOutside.png',

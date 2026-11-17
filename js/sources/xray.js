@@ -21,6 +21,7 @@ function xray({ item, band, intensity, s, imgH }) {
 
 export default {
   label: 'X-Ray Source',
+  short: 'X-Ray',
   group: 'specialized',
   src:          'images/XRayEmitter.png',
   sourceSrc:    'images/XRaySource.png',

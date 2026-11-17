@@ -3,6 +3,7 @@ import { irGlow } from '../glow.js';
 
 export default {
   label: 'TV Remote',
+  short: 'Remote',
   group: 'specialized',
   src:       'images/Remote.png',
   sourceSrc: 'images/RemoteGlow.png',   // the IR LED at the tip

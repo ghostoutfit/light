@@ -8,6 +8,7 @@ const POWER_MAX = 120;
 
 export default {
   label: 'Radiator',
+  short: 'Radiator',
   group: 'hot',
   src:     'images/Radiator.png',
   maskSrc: 'images/HotRadiator.png',   // the hot panel, used for every glow
@@ -25,6 +26,7 @@ export default {
     panelTop: -36,
     panel:    { left: Math.round((W - Math.round(W * 0.6)) / 2), width: Math.round(W * 0.6) },  // slim power slider
     devPanel: { left: 0, width: W },
+    outlineTrimRight: 30,              // the picture has empty space right of the radiator
   },
   graphScale: 1.5,                     // taller curve on its emission graph (display only)
   // It's bigger than the detector screen, so it counts as "in view" once it fills a third of the screen

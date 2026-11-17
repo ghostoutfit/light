@@ -56,7 +56,7 @@ img { max-width: 100%; height: auto; }
 /* A slider row: [label] [min] [——slider——] [value] */
 .panel-row  { display: flex; align-items: center; gap: .375rem; }
 .row-label  { font-size: 8px; color: #a1a1aa; width: 28px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .025em; }
-.row-slider { flex: 1 1 0%; cursor: pointer; }
+.row-slider { flex: 1 1 0%; min-width: 0; cursor: pointer; }   /* min-width: 0 — a range input won't shrink below its default width otherwise */
 .row-min    { font-size: 7px; color: #52525b; flex-shrink: 0; }
 .row-value  { font-size: 7px; color: #71717a; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .row-value.amp { font-size: 8px; width: 24px; flex-shrink: 1; }

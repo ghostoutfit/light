@@ -77,7 +77,7 @@ function layerList(item, live, field, labels, { key, check, accent, labelWidth, 
   // A small slider + readout for one property of layer i.
   const slider = (i, { min, max, step, color, get, set, text }) => {
     const input = h('input', { type: 'range', min, max, step,
-      style: { flex: 1, height: 3, cursor: 'pointer', accentColor: color },
+      style: { flex: 1, minWidth: 0, height: 3, cursor: 'pointer', accentColor: color },   // minWidth: see .row-slider
       onInput: e => upd(i, set(+e.target.value)) });
     const value = h('span', { style: valueStyle });
     live(() => { const l = item[field][i]; input.disabled = !l.on; input.value = get(l); setText(value, ...text(l)); });

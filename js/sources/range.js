@@ -22,6 +22,7 @@ const bodyGlow = ({ s, imgH }) => therm => {
 
 export default {
   label: 'Electric Cooker',
+  short: 'Cooker',
   group: 'hot',
   src:     'images/Heater.png',
   maskSrc: 'images/HeaterElement.png',  // the element, used for every glow

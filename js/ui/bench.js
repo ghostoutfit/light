@@ -45,7 +45,8 @@ function powerSlider(item, s, view) {
   const focusSlider = e => { if (!e.target.closest('button')) setTimeout(() => input.focus()); };
   return {
     nodes: [h('div', { class: 'panel-row', style: { cursor: 'pointer' }, onPointerDown: focusSlider },
-      h('span', { class: 'row-label' }, 'Power'),
+      h('span', { class: 'row-label', style: { width: 'auto', minWidth: 28, lineHeight: 1.25 } },   // its short name over POWER
+        s.short && h('span', { style: { display: 'block' } }, s.short), 'Power'),
       input,
       deleteButton(item))],
     update: () => { if (+input.value !== item.amplitude) input.value = item.amplitude; },
@@ -63,9 +64,12 @@ function makeView(item) {
   view.hit = h('div', { style: { position: 'absolute', top: 0, left: 0, width: s.w,
     height: imgH - s.layout.grabTrim, cursor: 'grab' },
     onPointerDown: e => startBenchDrag(e, item) });
+  // Selected outline: the image's box, its right edge pulled in by layout.outlineTrimRight
+  view.outline = h('div', { style: { position: 'absolute', top: 0, left: 0, bottom: 0, right: s.layout.outlineTrimRight,
+    outlineOffset: 4, borderRadius: 6, pointerEvents: 'none' } });
   // Item image + naked-eye glow (benchBehind layers go before the image, bench layers after)
-  view.figure = h('div', { style: { position: 'relative', width: s.w, height: imgH, outlineOffset: 4, borderRadius: 6 } },
-    view.img, view.hit);
+  view.figure = h('div', { style: { position: 'relative', width: s.w, height: imgH } },
+    view.img, view.hit, view.outline);
   view.root = h('div', { class: 'bench-item', style: { width: s.w } }, view.panel.mark, view.figure, view.graph.mark);
   return view;
 }
@@ -123,7 +127,7 @@ function updateView(view) {
   }
 
   // Selected: the arrow keys move it
-  setStyle(view.figure, { outline: state.selected?.kind === 'item' && state.selected.id === item.id
+  setStyle(view.outline, { outline: state.selected?.kind === 'item' && state.selected.id === item.id
     ? '2px dashed rgba(255,255,255,0.8)' : 'none' });
 
   // Naked-eye glow — redrawn only when the item's settings change (not when it moves)
@@ -135,7 +139,7 @@ function updateView(view) {
     const behind = [s.benchBehind?.(ctx)].flat(Infinity).filter(Boolean);
     const front  = [s.bench?.(ctx)].flat(Infinity).filter(Boolean);
     view.img.before(...behind);
-    view.figure.append(...front);
+    view.outline.before(...front);
     view.glowNodes = [...behind, ...front];
   }
 

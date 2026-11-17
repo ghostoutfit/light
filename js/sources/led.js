@@ -47,6 +47,7 @@ function bench({ item, s, imgH, vis }) {
 
 export default {
   label: 'LED Bulb',
+  short: 'LED',
   group: 'specialized',
   src:     'images/LEDBulb.png',
   maskSrc: 'images/LEDBulbGlow.png',

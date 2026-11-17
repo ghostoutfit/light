@@ -66,6 +66,7 @@ function bench({ item, s, imgH }) {
 
 export default {
   label: 'UV LED',
+  short: 'UV LED',
   group: 'specialized',
   src:         'images/GelFlatBaseGray.png',
   outsideSrc:  'images/GelGlowWhite.png',   // diffuse dome glow

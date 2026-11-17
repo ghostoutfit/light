@@ -7,6 +7,7 @@
 //
 //  A source record has:
 //    label, group                 — parts-panel name and box ('hot', 'specialized', 'secret')
+//    short                        — short name, shown above POWER on its slider
 //    src, w, natW, natH           — bench image, its display width (px) and natural size
 //    maskSrc, outsideSrc, …       — extra images its glows use
 //    spectrum                     — peak/width (Hz) slider ranges and a new item's starting
@@ -15,7 +16,8 @@
 //                                   power t (0–1) changes; `fixed` = always that power, no slider
 //    temp    { max, curve }       — °C at full power for the TEMP readout (curve: exponent, default √)
 //    tuning                       — glow image offsets (px) and naked-eye glow look
-//    layout                       — where its control panel and dev graph sit on the bench
+//    layout                       — where its control panel and dev graph sit on the bench,
+//                                   and how far in (px) the selection outline's right edge sits
 //    detector { IR, Visible, UV, XRay } — draws its glow in that detector band (missing = invisible)
 //    bench, benchBehind           — draws its naked-eye glow over / under the bench image
 //  Optional: benchColor, graphScale, inView, itemDefaults, devGlowOffsets (see the files).
@@ -39,7 +41,7 @@ function complete(s) {
     tuning: { maskX: 0, maskY: 0, benchX: 0, benchY: 0,
               visOpacity: 1, visBlur: 1, visHue: 0, visSat: 1, visBright: 1, ...s.tuning },
     layout: { panelTop: -6, panel: { left: 0, width: s.w }, devPanel: null,
-              graphWidth: s.w, graphGap: 8, grabTrim: 0, ...s.layout },
+              graphWidth: s.w, graphGap: 8, grabTrim: 0, outlineTrimRight: 0, ...s.layout },
     detector: s.detector ?? {},
   };
 }
